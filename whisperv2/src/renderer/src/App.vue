@@ -71,7 +71,6 @@
     <template v-else>
       <!-- Status Header -->
       <div class="setting-group status-section">
-        <label>Status</label>
         <div class="status-row">
           <div class="status-indicator" :class="{ recording: isRecording }">
             <span class="status-dot"></span>
@@ -87,7 +86,7 @@
         </div>
         <div class="binary-status">
           <span class="status-dot" :class="{ active: hasBinary }"></span>
-          <span>Whisper {{ hasBinary ? 'Loaded' : 'Unloaded' }}</span>
+          <span>{{ hasBinary ? '✅' : '❌' }} Whisper {{ hasBinary ? 'Loaded' : 'Unloaded' }}</span>
         </div>
       </div>
        

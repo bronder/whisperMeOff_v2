@@ -454,9 +454,7 @@ function registerGlobalHotkey(): void {
   const registered = globalShortcut.register(hotkey, () => {
     console.log('[Hotkey] Triggered:', hotkey)
     if (mainWindow) {
-      if (!mainWindow.isVisible()) {
-        mainWindow.show()
-      }
+      // Don't show window - let it stay hidden if user minimized to tray
       mainWindow.webContents.send('hotkey-triggered')
     }
   })
@@ -487,9 +485,7 @@ function registerHotkeyHandlers(): void {
       // Register with globalShortcut for toggle mode
       const result = globalShortcut.register(hotkey, () => {
         if (mainWindow) {
-          if (!mainWindow.isVisible()) {
-            mainWindow.show()
-          }
+          // Don't show window - let it stay hidden if user minimized to tray
           mainWindow.webContents.send('hotkey-triggered')
         }
       })
