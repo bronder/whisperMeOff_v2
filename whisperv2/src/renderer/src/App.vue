@@ -16,10 +16,17 @@
           </button>
           <button 
             class="tab-button" 
-            :class="{ active: activeTab === 'transcription' }"
-            @click="activeTab = 'transcription'"
+            :class="{ active: activeTab === 'whisper' }"
+            @click="activeTab = 'whisper'"
           >
-            📝 AI
+            🎙️ Whisper
+          </button>
+          <button 
+            class="tab-button" 
+            :class="{ active: activeTab === 'llama' }"
+            @click="activeTab = 'llama'"
+          >
+            🦙 Llama
           </button>
           <button 
             class="tab-button" 
@@ -32,51 +39,57 @@
 
         <!-- Audio Tab -->
         <div v-if="activeTab === 'audio'" class="tab-content">
-          <div class="setting-group">
-            <label>Microphone</label>
-            <select v-model="selectedMic" class="select-input" @change="onMicChange">
-              <option value="">Default Microphone</option>
-              <option v-for="device in audioDevices" :key="device.deviceId" :value="device.deviceId">
-                {{ device.label || `Microphone ${device.deviceId}` }}
-              </option>
-            </select>
+          <div class="settings-section">
+            <div class="setting-group">
+              <label>Microphone</label>
+              <select v-model="selectedMic" class="select-input" @change="onMicChange">
+                <option value="">Default Microphone</option>
+                <option v-for="device in audioDevices" :key="device.deviceId" :value="device.deviceId">
+                  {{ device.label || `Microphone ${device.deviceId}` }}
+                </option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <!-- Transcription Tab -->
-        <div v-if="activeTab === 'transcription'" class="tab-content">
-          <div class="setting-group">
-            <label>Language</label>
-            <select v-model="selectedLanguage" class="select-input">
-              <option value="auto">Auto Detect</option>
-              <option value="en">English</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="it">Italian</option>
-              <option value="pt">Portuguese</option>
-              <option value="ru">Russian</option>
-              <option value="zh">Chinese</option>
-              <option value="ja">Japanese</option>
-              <option value="ko">Korean</option>
-            </select>
-          </div>
+        <!-- Whisper Tab -->
+        <div v-if="activeTab === 'whisper'" class="tab-content">
+          <div class="settings-section">
+            <div class="setting-group">
+              <label>Language</label>
+              <select v-model="selectedLanguage" class="select-input">
+                <option value="auto">Auto Detect</option>
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="ru">Russian</option>
+                <option value="zh">Chinese</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+              </select>
+            </div>
 
-          <div class="setting-group">
-            <label>Model Path</label>
-            <div class="path-display">{{ modelPath || 'Not selected' }}</div>
-            <button class="btn btn-primary" style="margin-top: 10px;" @click="selectModelFile">Select Model File</button>
+            <div class="setting-group">
+              <label>Model Path</label>
+              <div class="path-display">{{ modelPath || 'Not selected' }}</div>
+              <button class="btn btn-primary" style="margin-top: 10px;" @click="selectModelFile">Select Model File</button>
+            </div>
           </div>
+        </div>
 
-          <!-- Llama.cpp Post-processing -->
-          <div class="setting-group">
-            <label>
-              <input type="checkbox" v-model="llamaEnabled" @change="saveLlamaSettings" />
-              Enable llama.cpp text formatting
-            </label>
-          </div>
+        <!-- Llama Tab -->
+        <div v-if="activeTab === 'llama'" class="tab-content">
+          <div class="settings-section">
+            <div class="setting-group">
+              <label>
+                <input type="checkbox" v-model="llamaEnabled" @change="saveLlamaSettings" />
+                Enable llama.cpp text formatting
+              </label>
+            </div>
 
-          <div v-if="llamaEnabled">
             <div class="setting-group">
               <label>Llama Binary</label>
               <div class="model-status">
@@ -85,97 +98,99 @@
               </div>
             </div>
 
-            <div class="setting-group">
-              <label>Llama Model Path</label>
-              <div class="model-status">
-                <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
-                <span v-else class="no-model">No model selected</span>
-              </div>
+          <div class="setting-group">
+            <label>Llama Model Path</label>
+            <div class="model-status">
+              <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
+              <span v-else class="no-model">No model selected</span>
             </div>
+          </div>
 
-            <div class="button-row">
-              <button class="test-button secondary" @click="selectLlamaModel">
-                📁 Select Llama Model
+          <div class="button-row">
+            <button class="test-button secondary" @click="selectLlamaModel">
+              📁 Select Llama Model
+            </button>
+            <button class="test-button secondary" @click="browseHuggingFace">
+              🌐 Browse HuggingFace
+            </button>
+          </div>
+
+          <div class="setting-group">
+            <label>Download Model</label>
+            <div class="model-download-list">
+              <button 
+                v-for="model in availableLlamaModels" 
+                :key="model.id"
+                class="test-button secondary model-download-btn"
+                @click="downloadLlamaModel(model.id)"
+                :disabled="isDownloadingLlama"
+              >
+                ⬇️ {{ model.name }} ({{ model.size }})
               </button>
-              <button class="test-button secondary" @click="browseHuggingFace">
-                🌐 Browse HuggingFace
-              </button>
             </div>
+            <p v-if="isDownloadingLlama" class="download-status">Downloading... {{ downloadProgress }}%</p>
+          </div>
 
-            <div class="setting-group">
-              <label>Download Model</label>
-              <div class="model-download-list">
-                <button 
-                  v-for="model in availableLlamaModels" 
-                  :key="model.id"
-                  class="test-button secondary model-download-btn"
-                  @click="downloadLlamaModel(model.id)"
-                  :disabled="isDownloadingLlama"
-                >
-                  ⬇️ {{ model.name }} ({{ model.size }})
-                </button>
-              </div>
-              <p v-if="isDownloadingLlama" class="download-status">Downloading... {{ downloadProgress }}%</p>
-            </div>
-
-            <div class="setting-group">
-              <label>Or enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
-              <div class="custom-model-row">
-                <input 
-                  type="text" 
-                  v-model="llamaModelId" 
-                  placeholder="e.g., ggml-org/tinygemma3-GGUF:Q8_0"
-                  class="model-input"
-                  @blur="saveLlamaSettings"
-                />
-                <button 
-                  class="test-button secondary" 
-                  @click="downloadFromHuggingFace"
-                  :disabled="isDownloadingLlama || !llamaModelId"
-                >
-                  ⬇️ Download
-                </button>
-              </div>
-              <p class="hint">Enter a HuggingFace model ID with optional quantization (e.g., :Q8_0, :Q4_K_M)</p>
-            </div>
-
-            <div class="setting-group">
-              <label>HuggingFace Token (optional, for private models or higher rate limits):</label>
+          <div class="setting-group">
+            <label>Or enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
+            <div class="custom-model-row">
               <input 
-                type="password" 
-                v-model="huggingFaceToken" 
-                placeholder="hf_xxxxxxxxxxxxx"
+                type="text" 
+                v-model="llamaModelId" 
+                placeholder="e.g., ggml-org/tinygemma3-GGUF:Q8_0"
                 class="model-input"
                 @blur="saveLlamaSettings"
               />
-              <p class="hint">Get your token from https://huggingface.co/settings/tokens</p>
+              <button 
+                class="test-button secondary" 
+                @click="downloadFromHuggingFace"
+                :disabled="isDownloadingLlama || !llamaModelId"
+              >
+                ⬇️ Download
+              </button>
             </div>
+            <p class="hint">Enter a HuggingFace model ID with optional quantization (e.g., :Q8_0, :Q4_K_M)</p>
+          </div>
+
+          <div class="setting-group">
+            <label>HuggingFace Token (optional, for private models or higher rate limits):</label>
+            <input 
+              type="password" 
+              v-model="huggingFaceToken" 
+              placeholder="hf_xxxxxxxxxxxxx"
+              class="model-input"
+              @blur="saveLlamaSettings"
+            />
+            <p class="hint">Get your token from https://huggingface.co/settings/tokens</p>
+          </div>
           </div>
         </div>
 
         <!-- General Tab -->
         <div v-if="activeTab === 'general'" class="tab-content">
-          <div class="setting-group">
-            <label>Hotkey</label>
-            <div class="hotkey-row">
-              <input 
-                type="text" 
-                v-model="hotkeyInput" 
-                @keydown="captureHotkey"
-                placeholder="Click and press keys..."
-                class="hotkey-input"
-                readonly
-                ref="hotkeyInputRef"
-              />
-              <button 
-                class="btn btn-record" 
-                :class="{ recording: isRecordingHotkey }"
-                @click="toggleHotkeyRecording"
-              >
-                {{ isRecordingHotkey ? '⏹ Stop' : '⌨️ Record' }}
-              </button>
+          <div class="settings-section">
+            <div class="setting-group">
+              <label>Hotkey</label>
+              <div class="hotkey-row">
+                <input 
+                  type="text" 
+                  v-model="hotkeyInput" 
+                  @keydown="captureHotkey"
+                  placeholder="Click and press keys..."
+                  class="hotkey-input"
+                  readonly
+                  ref="hotkeyInputRef"
+                />
+                <button 
+                  class="btn btn-record" 
+                  :class="{ recording: isRecordingHotkey }"
+                  @click="toggleHotkeyRecording"
+                >
+                  {{ isRecordingHotkey ? '⏹ Stop' : '⌨️ Record' }}
+                </button>
+              </div>
+              <p class="hint" v-if="isRecordingHotkey">Press a key combination (e.g., Ctrl+R, Ctrl+Alt+T)...</p>
             </div>
-            <p class="hint" v-if="isRecordingHotkey">Press a key combination (e.g., Ctrl+R, Ctrl+Alt+T)...</p>
           </div>
         </div>
 
@@ -206,6 +221,13 @@
           <span class="status-dot" :class="{ active: hasBinary }"></span>
           <span>{{ hasBinary ? '✅' : '❌' }} Whisper {{ hasBinary ? 'Loaded' : 'Unloaded' }}</span>
         </div>
+        <div class="binary-status">
+          <span class="status-dot" :class="{ active: llamaEnabled && llamaModelPath }"></span>
+          <span>{{ llamaEnabled && llamaModelPath ? '✅' : '⬜' }} Llama {{ llamaEnabled && llamaModelPath ? 'Ready' : 'Off' }}</span>
+        </div>
+        <div class="binary-status" v-if="llamaModelPath">
+          <span>✅ {{ llamaModelPath.split(/[/\\]/).pop() }} - Loaded</span>
+        </div>
       </div>
        
       <!-- Recording Card with VU Meter -->
@@ -235,10 +257,17 @@
         </button>
         <button 
           class="tab-button" 
-          :class="{ active: activeTab === 'transcription' }"
-          @click="activeTab = 'transcription'"
+          :class="{ active: activeTab === 'whisper' }"
+          @click="activeTab = 'whisper'"
         >
-          📝 AI
+          🎙️ Whisper
+        </button>
+        <button 
+          class="tab-button" 
+          :class="{ active: activeTab === 'llama' }"
+          @click="activeTab = 'llama'"
+        >
+          🦙 Llama
         </button>
         <button 
           class="tab-button" 
@@ -262,8 +291,8 @@
         </div>
       </div>
 
-      <!-- Transcription Settings Tab -->
-      <div v-if="activeTab === 'transcription'" class="tab-content">
+      <!-- Whisper Settings Tab -->
+      <div v-if="activeTab === 'whisper'" class="tab-content">
         <div class="setting-group">
           <label>Language</label>
           <select v-model="selectedLanguage" class="select-input">
@@ -328,8 +357,10 @@
             📁 Select Existing Model
           </button>
         </div>
+      </div>
 
-        <!-- Llama.cpp Post-processing -->
+      <!-- Llama Settings Tab -->
+      <div v-if="activeTab === 'llama'" class="tab-content">
         <div class="setting-group">
           <label>
             <input type="checkbox" v-model="llamaEnabled" @change="saveLlamaSettings" />
@@ -337,28 +368,81 @@
           </label>
         </div>
 
-        <div v-if="llamaEnabled">
-          <div class="setting-group">
-            <label>Llama Binary</label>
-            <div class="model-status">
-              <span v-if="hasLlamaBinary">✅ Installed</span>
-              <span v-else class="no-model">Not installed</span>
-            </div>
+        <div class="setting-group">
+          <label>Llama Binary</label>
+          <div class="model-status">
+            <span v-if="hasLlamaBinary">✅ Installed</span>
+            <span v-else class="no-model">Not installed</span>
           </div>
+        </div>
 
-          <div class="setting-group">
-            <label>Llama Model Path</label>
-            <div class="model-status">
-              <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
-              <span v-else class="no-model">No model selected</span>
-            </div>
+        <div class="setting-group">
+          <label>Llama Model Path</label>
+          <div class="model-status">
+            <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
+            <span v-else class="no-model">No model selected</span>
           </div>
+        </div>
 
-          <div class="setting-group">
-            <button class="test-button secondary" @click="selectLlamaModel">
-              📁 Select Llama Model
+        <div class="setting-group">
+          <button class="test-button secondary" @click="selectLlamaModel">
+            📁 Select Llama Model
+          </button>
+        </div>
+
+        <div class="setting-group">
+          <label>Download Model</label>
+          <div class="model-download-list">
+            <button 
+              v-for="model in availableLlamaModels" 
+              :key="model.id"
+              class="test-button secondary model-download-btn"
+              @click="downloadLlamaModel(model.id)"
+              :disabled="isDownloadingLlama"
+            >
+              ⬇️ {{ model.name }} ({{ model.size }})
             </button>
           </div>
+          <p v-if="isDownloadingLlama" class="download-status">Downloading... {{ downloadProgress }}%</p>
+        </div>
+
+        <div class="setting-group">
+          <label>Or enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
+          <div class="custom-model-row">
+            <input 
+              type="text" 
+              v-model="llamaModelId" 
+              placeholder="e.g., ggml-org/tinygemma3-GGUF:Q8_0"
+              class="model-input"
+              @blur="saveLlamaSettings"
+            />
+            <button 
+              class="test-button secondary" 
+              @click="downloadFromHuggingFace"
+              :disabled="isDownloadingLlama || !llamaModelId"
+            >
+              ⬇️ Download
+            </button>
+          </div>
+          <p class="hint">Enter a HuggingFace model ID with optional quantization (e.g., :Q8_0, :Q4_K_M)</p>
+        </div>
+
+        <div class="setting-group">
+          <label>HuggingFace Token (optional, for private models or higher rate limits):</label>
+          <input 
+            type="password" 
+            v-model="huggingFaceToken" 
+            placeholder="hf_xxxxxxxxxxxxx"
+            class="model-input"
+            @blur="saveLlamaSettings"
+          />
+          <p class="hint">Get your token from https://huggingface.co/settings/tokens</p>
+        </div>
+
+        <div class="setting-group">
+          <button class="test-button secondary" @click="browseHuggingFace">
+            🌐 Browse HuggingFace
+          </button>
         </div>
       </div>
 
@@ -381,10 +465,12 @@
     </template>
 
     <!-- Transcription History -->
-    <div class="card" v-if="transcriptionHistory.length > 0">
+    <div class="card transcription-history" v-if="transcriptionHistory.length > 0">
       <h2>Recent Transcriptions</h2>
-      <div v-for="(text, index) in transcriptionHistory" :key="index" class="transcription-item">
-        <p class="transcription">{{ text }}</p>
+      <div class="transcription-list">
+        <div v-for="(item, index) in transcriptionHistory" :key="index" class="transcription-item">
+          <p class="transcription-small">• {{ item.text }}</p>
+        </div>
       </div>
     </div>
   </div>
@@ -420,7 +506,7 @@ const downloadProgress = ref(0)
 const customModelPath = ref('')
 const audioDevices = ref<MediaDeviceInfo[]>([])
 const transcriptionResult = ref('')
-const transcriptionHistory = ref<string[]>([])
+const transcriptionHistory = ref<{ text: string; prompt?: string }[]>([])
 const showSettings = ref(false)
 const activeTab = ref('audio')
 const audioLevel = ref(0)
@@ -539,8 +625,8 @@ const stopRecording = async () => {
 
       transcriptionResult.value = finalText
       // Add to history (keep last 3)
-      transcriptionHistory.value.unshift(finalText)
-      if (transcriptionHistory.value.length > 3) {
+      transcriptionHistory.value.unshift({ text: finalText })
+      if (transcriptionHistory.value.length > 200) {
         transcriptionHistory.value.pop()
       }
       statusText.value = 'Transcription complete!'
@@ -960,7 +1046,7 @@ body {
 }
 
 .container {
-  max-width: 600px;
+  max-width: 100%;
   margin: 0 auto;
   padding: 40px 20px;
 }
@@ -1213,6 +1299,17 @@ h1 {
   animation: fadeIn 0.2s ease;
 }
 
+.settings-section {
+  border: 2px solid rgba(0, 212, 255, 0.3);
+  border-radius: 8px;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.setting-actions {
+  margin-top: 20px;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -1310,6 +1407,30 @@ h1 {
   font-size: 1.1rem;
   line-height: 1.6;
   color: #ddd;
+}
+
+.transcription-small {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #aaa;
+  margin: 4px 0;
+}
+
+.transcription-history {
+  max-height: 300px;
+  overflow: hidden;
+}
+
+.transcription-list {
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.prompt-text {
+  font-size: 0.75rem;
+  color: #888;
+  font-family: monospace;
+  margin-bottom: 8px;
 }
 
 .recording-hint {

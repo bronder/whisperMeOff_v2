@@ -337,7 +337,7 @@ Formatted:`
       '--no-display'
     ]
     
-    console.log('[Llama] Running llama-cli with args:', args.join(' '))
+
     
     return new Promise((resolve) => {
       const llama = spawn(llamaBinPath, args, { shell: true })

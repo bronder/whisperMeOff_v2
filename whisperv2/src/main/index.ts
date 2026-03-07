@@ -62,13 +62,16 @@ function setPreviousWindowFocused(focused: boolean): void {
   previousWindowFocused = focused
 }
 
+// Track if main window was visible before recording started
+let mainWindowWasVisible = false
+
 // Paste to the previously focused window using Windows API
 function pasteToPreviousWindow(): void {
   if (!previousWindowFocused) {
     console.log('[Paste] No previous window to paste to')
     return
   }
-  
+   
   const { exec } = require('child_process')
   const { clipboard } = require('electron')
   const fs = require('fs')
@@ -81,8 +84,9 @@ function pasteToPreviousWindow(): void {
   
   // 2. Write the transcribed text to clipboard (already done before calling this)
   
-  // 3. Hide the window so the previous app regains focus
-  if (mainWindow) {
+  // 3. Only hide the window if it was hidden before recording started
+  // This way, if the user had the main window visible, it stays visible
+  if (mainWindow && !mainWindowWasVisible) {
     mainWindow.hide()
   }
   
@@ -148,8 +152,9 @@ function createWindow(): void {
   console.log('[Icon] Window icon size:', icon.getSize())
   
   mainWindow = new BrowserWindow({
-    width: 500,
+    width: 800,
     height: 800,
+    title: 'whisperMeOff',
     show: false,
     autoHideMenuBar: false,
     icon: icon,
@@ -199,6 +204,7 @@ function createSettingsWindow(): void {
   settingsWindow = new BrowserWindow({
     width: 600,
     height: 725,
+    title: 'whisperMeOff - Settings',
     minWidth: 400,
     minHeight: 400,
     show: false,
@@ -325,6 +331,9 @@ function createRecordingOverlay(): void {
 }
 
 function showRecordingOverlay(): void {
+  // Track if main window was visible before recording starts
+  mainWindowWasVisible = mainWindow?.isVisible() || false
+  
   if (!recordingOverlay) {
     createRecordingOverlay()
   }
