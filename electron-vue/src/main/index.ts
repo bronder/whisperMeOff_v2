@@ -121,6 +121,7 @@ function createSettingsWindow(): void {
     icon: icon,
     parent: mainWindow || undefined,
     modal: false,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

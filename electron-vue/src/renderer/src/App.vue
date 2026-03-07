@@ -2,13 +2,8 @@
   <div class="container">
     <!-- Settings Window - Only show settings -->
     <template v-if="isSettingsWindow">
-      <div class="header">
-        <h1>⚙️ Settings</h1>
-      </div>
-      
       <!-- Settings Panel -->
       <div class="card">
-        <h2>Whisper Settings</h2>
         
         <div class="setting-group">
           <label>Hotkey</label>
@@ -44,17 +39,6 @@
         </div>
 
         <div class="setting-group">
-          <label>Whisper Model Size</label>
-          <select v-model="selectedModelSize" class="select-input">
-            <option value="tiny">tiny (~75 MB) - Fastest</option>
-            <option value="base">base (~150 MB)</option>
-            <option value="small">small (~500 MB) - Recommended</option>
-            <option value="medium">medium (~1.5 GB)</option>
-            <option value="large">large (~3 GB)</option>
-          </select>
-        </div>
-
-        <div class="setting-group">
           <label>Language</label>
           <select v-model="selectedLanguage" class="select-input">
             <option value="auto">Auto Detect</option>
@@ -85,11 +69,6 @@
     
     <!-- Main Window - Show all UI -->
     <template v-else>
-      <div class="header">
-        <h1>🎙️ whisperMeOff</h1>
-        <p class="subtitle">Voice transcription app</p>
-      </div>
-      
       <!-- Recording Card with VU Meter -->
       <div class="card recording-card" :class="{ recording: isRecording }">
         <div class="status-row">
@@ -130,7 +109,6 @@
 
       <!-- Settings Panel -->
       <div class="card" v-if="showSettings">
-      <h2>Settings</h2>
       
       <div class="setting-group">
         <label>Hotkey</label>
@@ -150,17 +128,6 @@
           <option v-for="device in audioDevices" :key="device.deviceId" :value="device.deviceId">
             {{ device.label || `Microphone ${device.deviceId}` }}
           </option>
-        </select>
-      </div>
-
-      <div class="setting-group">
-        <label>Whisper Model Size</label>
-        <select v-model="selectedModelSize" class="select-input">
-          <option value="tiny">tiny (~75 MB) - Fastest</option>
-          <option value="base">base (~150 MB)</option>
-          <option value="small">small (~500 MB) - Recommended</option>
-          <option value="medium">medium (~1.5 GB)</option>
-          <option value="large">large (~3 GB)</option>
         </select>
       </div>
 
@@ -253,7 +220,6 @@ const isRecording = ref(false)
 const currentHotkey = ref('Ctrl+Shift+R')
 const hotkeyInput = ref('')
 const selectedMic = ref('')
-const selectedModelSize = ref('small')
 const modelPath = ref('')
 const isDownloading = ref(false)
 const isDownloadingBinary = ref(false)
@@ -434,7 +400,6 @@ const saveSettings = async () => {
   
   // Save Whisper settings to main process
   await window.api.whisper.saveSettings({
-    modelSize: selectedModelSize.value,
     modelPath: modelPath.value,
     language: selectedLanguage.value,
     translate: translateToEnglish.value
@@ -442,7 +407,6 @@ const saveSettings = async () => {
   
   // Save to localStorage
   localStorage.setItem('whisperSettings', JSON.stringify({
-    modelSize: selectedModelSize.value,
     modelPath: modelPath.value,
     language: selectedLanguage.value,
     translate: translateToEnglish.value,
@@ -455,6 +419,14 @@ const saveSettingsAndClose = async () => {
   await saveSettings()
   // Close the settings window
   window.close()
+}
+
+// Select model file using native file dialog
+const selectModelFile = async () => {
+  const result = await window.api.whisper.selectModel()
+  if (result.success) {
+    modelPath.value = result.path
+  }
 }
 
 // Download whisper binary
@@ -484,7 +456,8 @@ const downloadModel = async () => {
   statusText.value = 'Downloading model...'
   
   try {
-    const result = await window.api.whisper.downloadModel(selectedModelSize.value)
+    // Use 'base' as default model size for download
+    const result = await window.api.whisper.downloadModel('base')
     
     if (result.success) {
       modelPath.value = result.path || ''
@@ -524,7 +497,6 @@ const loadSettings = async () => {
   // Load from main process
   try {
     const settings = await window.api.whisper.getSettings()
-    selectedModelSize.value = settings.modelSize || 'small'
     modelPath.value = settings.modelPath || ''
     selectedLanguage.value = settings.language || 'auto'
     translateToEnglish.value = settings.translate || false
@@ -546,7 +518,6 @@ const loadSettings = async () => {
   if (saved) {
     try {
       const settings = JSON.parse(saved)
-      selectedModelSize.value = settings.modelSize || selectedModelSize.value
       modelPath.value = settings.modelPath || ''
       selectedLanguage.value = settings.language || 'auto'
       translateToEnglish.value = settings.translate || false
@@ -814,6 +785,11 @@ h1 {
   background: rgba(255, 255, 255, 0.1);
   color: white;
   font-size: 1rem;
+}
+
+.select-input option {
+  background: #1a1a2e;
+  color: white;
 }
 
 .save-button {
