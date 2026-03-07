@@ -3,6 +3,16 @@ import { join } from 'path'
 import { registerWhisperHandlers } from './whisperService'
 import * as fs from 'fs'
 import { uIOhook } from 'uiohook-napi'
+import { 
+  initTranscriptionLog, 
+  logTranscription, 
+  getTranscriptions, 
+  getTranscription,
+  deleteTranscription,
+  clearTranscriptions,
+  closeTranscriptionLog,
+  TranscriptionRecord 
+} from './transcriptionLog'
 
 // Check if running in development mode
 const isDev = process.env.NODE_ENV !== 'production'
@@ -638,7 +648,10 @@ function registerHotkeyHandlers(): void {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Initialize transcription log database
+  await initTranscriptionLog()
+  
   // Set app user model id for windows
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.whispermeoff')
@@ -688,6 +701,27 @@ app.whenReady().then(() => {
     return true
   })
 
+  // Transcription log handlers
+  ipcMain.handle('transcription:log', (_, text: string, duration?: number, model?: string, language?: string) => {
+    return logTranscription(text, duration, model, language)
+  })
+
+  ipcMain.handle('transcription:get-all', (_, limit?: number) => {
+    return getTranscriptions(limit)
+  })
+
+  ipcMain.handle('transcription:get', (_, id: number) => {
+    return getTranscription(id)
+  })
+
+  ipcMain.handle('transcription:delete', (_, id: number) => {
+    return deleteTranscription(id)
+  })
+
+  ipcMain.handle('transcription:clear', () => {
+    return clearTranscriptions()
+  })
+ 
   createWindow()
   createTray()
   createAppMenu()
@@ -710,4 +744,6 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   // Unregister all shortcuts when quitting
   globalShortcut.unregisterAll()
+  // Close transcription log database
+  closeTranscriptionLog()
 })

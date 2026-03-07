@@ -55,6 +55,13 @@
           >
             ⚙️ General
           </button>
+          <button 
+            class="tab-button" 
+            :class="{ active: activeTab === 'history' }"
+            @click="activeTab = 'history'; loadTranscriptionHistory()"
+          >
+            📜 History
+          </button>
         </div>
 
         <!-- Audio Tab -->
@@ -200,6 +207,28 @@
           </div>
         </div>
 
+        <!-- History Tab -->
+        <div v-if="activeTab === 'history'" class="tab-content">
+          <div class="settings-section">
+            <div class="setting-group">
+              <h3>Transcription History</h3>
+              <div class="history-list" v-if="dbTranscriptionHistory.length > 0">
+                <div 
+                  v-for="item in dbTranscriptionHistory" 
+                  :key="item.id" 
+                  class="history-item"
+                >
+                  <div class="history-timestamp">{{ new Date(item.timestamp).toLocaleString() }}</div>
+                  <div class="history-text">{{ item.text }}</div>
+                </div>
+              </div>
+              <div v-else class="no-history">
+                No transcriptions yet. Start recording to see history.
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="setting-actions">
           <button class="btn btn-primary" @click="saveSettingsAndClose">Save & Close</button>
         </div>
@@ -281,6 +310,13 @@
           @click="activeTab = 'general'"
         >
           ⚙️ General
+        </button>
+        <button 
+          class="tab-button" 
+          :class="{ active: activeTab === 'history' }"
+          @click="activeTab = 'history'; loadTranscriptionHistory()"
+        >
+          📜 History
         </button>
       </div>
 
@@ -452,6 +488,26 @@
         </div>
       </div>
 
+      <!-- History Tab -->
+      <div v-if="activeTab === 'history'" class="tab-content">
+        <div class="setting-group">
+          <h3>Transcription History</h3>
+          <div class="history-list" v-if="dbTranscriptionHistory.length > 0">
+            <div 
+              v-for="item in dbTranscriptionHistory" 
+              :key="item.id" 
+              class="history-item"
+            >
+              <div class="history-timestamp">{{ new Date(item.timestamp).toLocaleString() }}</div>
+              <div class="history-text">{{ item.text }}</div>
+            </div>
+          </div>
+          <div v-else class="no-history">
+            No transcriptions yet. Start recording to see history.
+          </div>
+        </div>
+      </div>
+
       <div class="button-row-right">
         <button class="cancel-button" @click="cancelSettings">Cancel</button>
         <button class="save-button" @click="saveSettings">Save Settings</button>
@@ -502,7 +558,22 @@ const customModelPath = ref('')
 const audioDevices = ref<MediaDeviceInfo[]>([])
 const transcriptionResult = ref('')
 const transcriptionHistory = ref<{ text: string; prompt?: string }[]>([])
+const dbTranscriptionHistory = ref<{ id: number; text: string; timestamp: string }[]>([])
 const showSettings = ref(false)
+
+// Load transcription history from database
+async function loadTranscriptionHistory() {
+  try {
+    const records = await window.api.transcription.getAll(50)
+    dbTranscriptionHistory.value = records.map(r => ({
+      id: r.id,
+      text: r.text,
+      timestamp: r.timestamp
+    }))
+  } catch (err) {
+    console.error('[App] Failed to load transcription history:', err)
+  }
+}
 const menuOpen = ref(false)
 const activeTab = ref('audio')
 const audioLevel = ref(0)
@@ -627,6 +698,14 @@ const stopRecording = async () => {
       }
       statusText.value = 'Transcription complete!'
       
+      // Log transcription to database
+      try {
+        await window.api.transcription.log(finalText)
+        console.log('[App] Transcription logged to database')
+      } catch (err) {
+        console.error('[App] Failed to log transcription:', err)
+      }
+       
       // Copy to clipboard and paste to previous window
       try {
         await window.api.copyToClipboard(finalText)
@@ -1587,6 +1666,36 @@ h1 {
 .transcription-history {
   max-height: 300px;
   overflow: hidden;
+}
+
+/* History tab styles */
+.history-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.history-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.history-timestamp {
+  font-size: 0.75rem;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.history-text {
+  font-size: 0.9rem;
+  color: #ddd;
+}
+
+.no-history {
+  text-align: center;
+  color: #888;
+  padding: 20px;
 }
 
 .transcription-list {

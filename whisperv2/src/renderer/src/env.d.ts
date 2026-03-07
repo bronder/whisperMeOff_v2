@@ -97,6 +97,23 @@ interface LlamaApi {
   getModelsPath: () => Promise<string>
 }
 
+interface TranscriptionRecord {
+  id: number
+  text: string
+  timestamp: string
+  duration: number | null
+  model: string | null
+  language: string | null
+}
+
+interface TranscriptionApi {
+  log: (text: string, duration?: number, model?: string, language?: string) => Promise<number>
+  getAll: (limit?: number) => Promise<TranscriptionRecord[]>
+  get: (id: number) => Promise<TranscriptionRecord | null>
+  delete: (id: number) => Promise<boolean>
+  clear: () => Promise<boolean>
+}
+
 interface Api {
   registerHotkey: (hotkey: string) => Promise<boolean>
   unregisterHotkey: () => Promise<boolean>
@@ -111,6 +128,7 @@ interface Api {
   copyToClipboard: (text: string) => Promise<boolean>
   whisper: WhisperApi
   llama: LlamaApi
+  transcription: TranscriptionApi
 }
 
 declare global {

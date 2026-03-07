@@ -73,7 +73,17 @@ const api = {
   
   // Auto-paste functionality
   setPreviousWindowFocused: (focused: boolean) => ipcRenderer.invoke('set-previous-window-focused', focused),
-  pasteToPreviousWindow: () => ipcRenderer.invoke('paste-to-previous-window')
+  pasteToPreviousWindow: () => ipcRenderer.invoke('paste-to-previous-window'),
+  
+  // Transcription log
+  transcription: {
+    log: (text: string, duration?: number, model?: string, language?: string) => 
+      ipcRenderer.invoke('transcription:log', text, duration, model, language),
+    getAll: (limit?: number) => ipcRenderer.invoke('transcription:get-all', limit),
+    get: (id: number) => ipcRenderer.invoke('transcription:get', id),
+    delete: (id: number) => ipcRenderer.invoke('transcription:delete', id),
+    clear: () => ipcRenderer.invoke('transcription:clear')
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
