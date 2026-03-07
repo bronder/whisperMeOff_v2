@@ -36,7 +36,16 @@ const api = {
   },
 
   // Clipboard - works when window is not focused
-  copyToClipboard: (text: string) => ipcRenderer.invoke('copy-to-clipboard', text)
+  copyToClipboard: (text: string) => ipcRenderer.invoke('copy-to-clipboard', text),
+  
+  // Recording overlay
+  showRecordingOverlay: () => ipcRenderer.invoke('show-recording-overlay'),
+  hideRecordingOverlay: () => ipcRenderer.invoke('hide-recording-overlay'),
+  sendAudioLevel: (level: number) => ipcRenderer.send('audio-level', level),
+  
+  // Auto-paste functionality
+  setPreviousWindowFocused: (focused: boolean) => ipcRenderer.invoke('set-previous-window-focused', focused),
+  pasteToPreviousWindow: () => ipcRenderer.invoke('paste-to-previous-window')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

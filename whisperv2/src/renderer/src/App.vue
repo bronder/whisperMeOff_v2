@@ -86,9 +86,6 @@
           </button>
         </div>
         
-        <!-- VU Meter -->
-        <VuMeter :level="audioLevel" />
-        
         <!-- Waveform Visualizer -->
         <WaveformVisualizer 
           :analyser="analyserNode" 
@@ -210,7 +207,6 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import VuMeter from './components/VuMeter.vue'
 import WaveformVisualizer from './components/WaveformVisualizer.vue'
 import { AudioRecorder, getAudioDevices } from './utils/audioRecorder'
 
@@ -259,6 +255,8 @@ const startRecording = async () => {
     // Set up level callback
     audioRecorder.setLevelCallback((level) => {
       audioLevel.value = level
+      // Send audio level to overlay
+      window.api?.sendAudioLevel(level)
     })
     
     // Start recording with selected microphone
@@ -269,6 +267,12 @@ const startRecording = async () => {
     
     isRecording.value = true
     statusText.value = 'Recording...'
+    
+    // Show recording overlay
+    window.api?.showRecordingOverlay()
+    
+    // Track that we had a previous window to paste to
+    window.api?.setPreviousWindowFocused(true)
     
   } catch (err) {
     console.error('[App] Error starting recording:', err)
@@ -289,6 +293,9 @@ const stopRecording = async () => {
   isRecording.value = false
   audioLevel.value = 0
   analyserNode.value = null
+  
+  // Hide recording overlay
+  window.api?.hideRecordingOverlay()
   
   if (!audioBlob) {
     statusText.value = 'Ready'
@@ -320,6 +327,9 @@ const stopRecording = async () => {
       try {
         await window.api.copyToClipboard(result.text)
         statusText.value = 'Copied to clipboard!'
+        
+        // Auto-paste to previous window
+        await window.api.pasteToPreviousWindow()
       } catch {
         statusText.value = 'Transcription complete!'
       }
@@ -747,7 +757,7 @@ h1 {
 }
 
 .mic-button {
-  padding: 20px 40px;
+  padding: 12px 24px;
   font-size: 1.2rem;
   font-weight: bold;
   border: none;

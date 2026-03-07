@@ -20,7 +20,7 @@ A desktop voice transcription app using Whisper for accurate speech-to-text conv
 
 1. Install dependencies:
 ```bash
-cd electron-vue
+cd whisperv2
 npm install
 ```
 

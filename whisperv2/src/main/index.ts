@@ -6,9 +6,11 @@ import * as fs from 'fs'
 
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
+let recordingOverlay: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let currentHotkey = 'CommandOrControl+Shift+R'
+let previousWindowFocused: boolean = false
 
 // Path to store hotkey
 function getHotkeyPath(): string {
@@ -53,8 +55,58 @@ function saveHotkey(hotkey: string): void {
   }
 }
 
+// Track if a window was focused before we show ours
+function setPreviousWindowFocused(focused: boolean): void {
+  previousWindowFocused = focused
+}
+
+// Paste to the previously focused window using Windows API
+function pasteToPreviousWindow(): void {
+  if (!previousWindowFocused) {
+    console.log('[Paste] No previous window to paste to')
+    return
+  }
+  
+  // Use PowerShell to send Ctrl+V to simulate paste
+  const { exec } = require('child_process')
+  
+  // Small delay to ensure clipboard is ready and window is focused
+  setTimeout(() => {
+    // Create a PowerShell script to send Ctrl+V
+    const psScript = `
+      Add-Type -TypeDefinition @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class KeySim {
+          [DllImport("user32.dll")]
+          public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+          public const byte VK_CONTROL = 0x11;
+          public const byte VK_V = 0x56;
+          public const uint KEYEVENTF_KEYDOWN = 0x0000;
+          public const uint KEYEVENTF_KEYUP = 0x0002;
+          public static void SendCtrlV() {
+            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
+            keybd_event(VK_V, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
+            keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+          }
+        }
+"@
+      [KeySim]::SendCtrlV()
+    `
+    
+    exec(`powershell -ExecutionPolicy Bypass -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, (error: Error | null) => {
+      if (error) {
+        console.error('[Paste] Error pasting:', error)
+      } else {
+        console.log('[Paste] Sent Ctrl+V to previous window')
+      }
+    })
+  }, 100)
+}
+
 function createWindow(): void {
-  // Get the path to the icon - icon is in project root, not electron-vue
+  // Get the path to the icon - icon is in project root, not whisperv2
   const iconPath = join(__dirname, '../../../flatrobot.ico')
   console.log('[Icon] Window icon path:', iconPath)
   
@@ -63,8 +115,8 @@ function createWindow(): void {
   console.log('[Icon] Window icon size:', icon.getSize())
   
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 500,
+    height: 800,
     show: false,
     autoHideMenuBar: false,
     icon: icon,
@@ -112,8 +164,8 @@ function createSettingsWindow(): void {
   const icon = nativeImage.createFromPath(iconPath)
   
   settingsWindow = new BrowserWindow({
-    width: 550,
-    height: 500,
+    width: 500,
+    height: 725,
     minWidth: 400,
     minHeight: 400,
     show: false,
@@ -143,6 +195,116 @@ function createSettingsWindow(): void {
     settingsWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?settings=true`)
   } else {
     settingsWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { settings: 'true' } })
+  }
+}
+
+function createRecordingOverlay(): void {
+  if (recordingOverlay) {
+    recordingOverlay.focus()
+    return
+  }
+  
+  const { screen } = require('electron')
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const width: number = primaryDisplay.workAreaSize.width
+  const height: number = primaryDisplay.workAreaSize.height
+  
+  recordingOverlay = new BrowserWindow({
+    width: 216,
+    height: 60,
+    x: Math.round((width - 216) / 2),
+    y: height - 80,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    focusable: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+  
+  recordingOverlay.on('closed', () => {
+    recordingOverlay = null
+  })
+  
+  // Simple recording indicator with blinking red dot
+  const overlayHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          background: transparent;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          overflow: hidden;
+        }
+        .overlay-container {
+          background: rgba(0, 0, 0, 0.7);
+          border-radius: 30px;
+          padding: 12px 24px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .recording-dot {
+          width: 14px;
+          height: 14px;
+          background: #ef4444;
+          border-radius: 50%;
+          animation: blink 1s ease-in-out infinite;
+          box-shadow: 0 0 10px #ef4444;
+        }
+        .recording-text {
+          color: white;
+          font-size: 17px;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+        }
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="overlay-container">
+        <div class="recording-dot"></div>
+        <span class="recording-text">Recording</span>
+      </div>
+    </body>
+    </html>
+  `
+  
+  recordingOverlay.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(overlayHtml)}`)
+}
+
+function showRecordingOverlay(): void {
+  if (!recordingOverlay) {
+    createRecordingOverlay()
+  }
+  recordingOverlay?.show()
+}
+
+function hideRecordingOverlay(): void {
+  recordingOverlay?.hide()
+}
+
+function sendAudioLevel(level: number): void {
+  if (recordingOverlay && !recordingOverlay.isDestroyed()) {
+    recordingOverlay.webContents.send('audio-level', level)
   }
 }
 
@@ -323,6 +485,21 @@ function registerGlobalHotkey(): void {
   ipcMain.handle('open-settings-window', () => {
     createSettingsWindow()
   })
+  
+  // Recording overlay controls
+  ipcMain.handle('show-recording-overlay', () => {
+    showRecordingOverlay()
+    return true
+  })
+  
+  ipcMain.handle('hide-recording-overlay', () => {
+    hideRecordingOverlay()
+    return true
+  })
+  
+  ipcMain.on('audio-level', (_, level: number) => {
+    sendAudioLevel(level)
+  })
 }
 
 app.whenReady().then(() => {
@@ -343,6 +520,19 @@ app.whenReady().then(() => {
   // Clipboard handler - works even when window is not focused
   ipcMain.handle('copy-to-clipboard', (_, text: string) => {
     clipboard.writeText(text)
+    return true
+  })
+  
+  // Track previous window state before recording starts
+  ipcMain.handle('set-previous-window-focused', (_, focused: boolean) => {
+    previousWindowFocused = focused
+    console.log('[Window] Previous window focused:', focused)
+    return true
+  })
+  
+  // Paste to previous window after transcription
+  ipcMain.handle('paste-to-previous-window', () => {
+    pasteToPreviousWindow()
     return true
   })
 
