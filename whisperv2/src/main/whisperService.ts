@@ -11,6 +11,7 @@ interface WhisperSettings {
   modelSize: string
   language: string
   translate: boolean
+  pushToTalk: boolean
 }
 
 // Default settings
@@ -18,7 +19,8 @@ let whisperSettings: WhisperSettings = {
   modelPath: '',
   modelSize: 'small',
   language: 'auto',
-  translate: false
+  translate: false,
+  pushToTalk: false
 }
 
 let settingsPath: string

@@ -69,14 +69,14 @@
     
     <!-- Main Window - Show all UI -->
     <template v-else>
-      <!-- Recording Card with VU Meter -->
-      <div class="card recording-card" :class="{ recording: isRecording }">
+      <!-- Status Header -->
+      <div class="setting-group status-section">
+        <label>Status</label>
         <div class="status-row">
           <div class="status-indicator" :class="{ recording: isRecording }">
             <span class="status-dot"></span>
             <span>{{ statusText }}</span>
           </div>
-          
           <button 
             class="mic-button" 
             :class="{ active: isRecording }"
@@ -85,7 +85,14 @@
             {{ isRecording ? '⏹️ STOP' : '🎤 START' }}
           </button>
         </div>
-        
+        <div class="binary-status">
+          <span class="status-dot" :class="{ active: hasBinary }"></span>
+          <span>Whisper {{ hasBinary ? 'Loaded' : 'Unloaded' }}</span>
+        </div>
+      </div>
+       
+      <!-- Recording Card with VU Meter -->
+      <div class="card recording-card" :class="{ recording: isRecording }">
         <!-- Waveform Visualizer -->
         <WaveformVisualizer 
           :analyser="analyserNode" 
@@ -95,13 +102,6 @@
         <p class="recording-hint" v-if="isRecording">
           Recording audio... Press STOP or release hotkey to transcribe
         </p>
-      </div>
-
-      <!-- Global Hotkey Info -->
-      <div class="card hotkey-card">
-        <h2>Global Hotkey</h2>
-        <p class="hotkey-display">{{ currentHotkey }}</p>
-        <p class="hint">Press this key combination anywhere to start/stop recording</p>
       </div>
 
       <!-- Settings Panel -->
@@ -167,6 +167,10 @@
           <input type="checkbox" v-model="translateToEnglish" />
           Translate to English
         </label>
+        <label>
+          <input type="checkbox" v-model="pushToTalk" />
+          Push-to-talk (hold hotkey to record)
+        </label>
       </div>
 
       <div class="setting-group">
@@ -190,17 +194,12 @@
     </div>
     </template>
 
-    <!-- Transcription Result -->
-    <div class="card" v-if="transcriptionResult">
-      <h2>Last Transcription</h2>
-      <p class="transcription">{{ transcriptionResult }}</p>
-    </div>
-
-    <!-- System Tray Info -->
-    <div class="card">
-      <h2>System Tray</h2>
-      <p class="hint">App minimizes to system tray when closed</p>
-      <p class="hint">Click tray icon to show/hide • Right-click for menu</p>
+    <!-- Transcription History -->
+    <div class="card" v-if="transcriptionHistory.length > 0">
+      <h2>Recent Transcriptions</h2>
+      <div v-for="(text, index) in transcriptionHistory" :key="index" class="transcription-item">
+        <p class="transcription">{{ text }}</p>
+      </div>
     </div>
   </div>
 </template>
@@ -222,8 +221,10 @@ const isDownloadingBinary = ref(false)
 const hasBinary = ref(false)
 const translateToEnglish = ref(false)
 const selectedLanguage = ref('auto')
+const pushToTalk = ref(true)
 const audioDevices = ref<MediaDeviceInfo[]>([])
 const transcriptionResult = ref('')
+const transcriptionHistory = ref<string[]>([])
 const showSettings = ref(false)
 const audioLevel = ref(0)
 const analyserNode = ref<AnalyserNode | null>(null)
@@ -236,6 +237,8 @@ let audioRecorder: AudioRecorder | null = null
 
 // Cleanup functions
 let cleanupHotkey: (() => void) | null = null
+let cleanupHotkeyUp: (() => void) | null = null
+let cleanupHotkeyChanged: (() => void) | null = null
 let cleanupSettings: (() => void) | null = null
 
 // Toggle recording
@@ -321,14 +324,19 @@ const stopRecording = async () => {
     
     if (result.success && result.text) {
       transcriptionResult.value = result.text
+      // Add to history (keep last 3)
+      transcriptionHistory.value.unshift(result.text)
+      if (transcriptionHistory.value.length > 3) {
+        transcriptionHistory.value.pop()
+      }
       statusText.value = 'Transcription complete!'
       
-      // Copy to clipboard - use Electron API so it works when window is not focused
+      // Copy to clipboard and paste to previous window
       try {
         await window.api.copyToClipboard(result.text)
         statusText.value = 'Copied to clipboard!'
         
-        // Auto-paste to previous window
+        // Try to paste to the previous window
         await window.api.pasteToPreviousWindow()
       } catch {
         statusText.value = 'Transcription complete!'
@@ -412,7 +420,8 @@ const saveSettings = async () => {
   await window.api.whisper.saveSettings({
     modelPath: modelPath.value,
     language: selectedLanguage.value,
-    translate: translateToEnglish.value
+    translate: translateToEnglish.value,
+    pushToTalk: pushToTalk.value
   })
   
   // Save to localStorage
@@ -420,6 +429,7 @@ const saveSettings = async () => {
     modelPath: modelPath.value,
     language: selectedLanguage.value,
     translate: translateToEnglish.value,
+    pushToTalk: pushToTalk.value,
     microphone: selectedMic.value
   }))
 }
@@ -510,6 +520,7 @@ const loadSettings = async () => {
     modelPath.value = settings.modelPath || ''
     selectedLanguage.value = settings.language || 'auto'
     translateToEnglish.value = settings.translate || false
+    pushToTalk.value = settings.pushToTalk ?? true
   } catch (e) {
     console.error('[App] Error loading settings from main:', e)
   }
@@ -549,15 +560,21 @@ onMounted(async () => {
   
   // Load saved settings
   await loadSettings()
-  
+   
   // Get current hotkey
   const hotkey = await window.api.getHotkey()
   currentHotkey.value = hotkey.replace('CommandOrControl', 'Ctrl')
   
-  // Listen for hotkey triggers
+  // Listen for hotkey triggers (toggle mode)
   cleanupHotkey = window.api.onHotkeyTriggered(() => {
-    console.log('[Renderer] Hotkey triggered!')
+    console.log('[Renderer] Hotkey triggered - toggling recording!')
     toggleRecording()
+  })
+  
+  // Listen for hotkey changes from settings
+  cleanupHotkeyChanged = window.api.onHotkeyChanged((hotkey) => {
+    console.log('[Renderer] Hotkey changed to:', hotkey)
+    currentHotkey.value = hotkey.replace('CommandOrControl', 'Ctrl')
   })
   
   // Listen for settings open from tray - only for main window
@@ -576,6 +593,7 @@ onMounted(async () => {
 // Cleanup on unmount
 onUnmounted(() => {
   cleanupHotkey?.()
+  cleanupHotkeyChanged?.()
   cleanupSettings?.()
   if (audioRecorder) {
     audioRecorder.dispose()
@@ -662,6 +680,10 @@ h1 {
   height: 12px;
   border-radius: 50%;
   background: #22c55e;
+}
+
+.status-dot:not(.active) {
+  background: #ef4444;
 }
 
 .status-indicator.recording .status-dot {
@@ -779,6 +801,12 @@ h1 {
 
 .setting-group {
   margin-bottom: 15px;
+}
+
+.status-section {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 15px;
 }
 
 .setting-group label {

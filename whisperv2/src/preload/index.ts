@@ -16,6 +16,18 @@ const api = {
     ipcRenderer.on('hotkey-triggered', callback)
     return () => ipcRenderer.removeListener('hotkey-triggered', callback)
   },
+  onHotkeyDown: (callback: () => void) => {
+    ipcRenderer.on('hotkey-down', callback)
+    return () => ipcRenderer.removeListener('hotkey-down', callback)
+  },
+  onHotkeyUp: (callback: () => void) => {
+    ipcRenderer.on('hotkey-up', callback)
+    return () => ipcRenderer.removeListener('hotkey-up', callback)
+  },
+  onHotkeyChanged: (callback: (hotkey: string) => void) => {
+    ipcRenderer.on('hotkey-changed', (_, hotkey) => callback(hotkey))
+    return () => ipcRenderer.removeAllListeners('hotkey-changed')
+  },
   onOpenSettings: (callback: () => void) => {
     ipcRenderer.on('open-settings', callback)
     return () => ipcRenderer.removeListener('open-settings', callback)

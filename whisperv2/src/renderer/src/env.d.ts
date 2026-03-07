@@ -70,6 +70,9 @@ interface Api {
   getHotkey: () => Promise<string>
   openSettingsWindow: () => Promise<void>
   onHotkeyTriggered: (callback: () => void) => () => void
+  onHotkeyDown: (callback: () => void) => () => void
+  onHotkeyUp: (callback: () => void) => () => void
+  onHotkeyChanged: (callback: (hotkey: string) => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
   copyToClipboard: (text: string) => Promise<boolean>
   whisper: WhisperApi

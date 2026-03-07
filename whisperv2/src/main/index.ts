@@ -67,42 +67,73 @@ function pasteToPreviousWindow(): void {
     return
   }
   
-  // Use PowerShell to send Ctrl+V to simulate paste
   const { exec } = require('child_process')
+  const { clipboard } = require('electron')
+  const fs = require('fs')
+  const path = require('path')
   
-  // Small delay to ensure clipboard is ready and window is focused
+  console.log('[Paste] Starting paste process...')
+  
+  // 1. Save existing clipboard content so we can restore it
+  const previousClipboard = clipboard.readText()
+  
+  // 2. Write the transcribed text to clipboard (already done before calling this)
+  
+  // 3. Hide the window so the previous app regains focus
+  if (mainWindow) {
+    mainWindow.hide()
+  }
+  
+  // 4. Delay slightly to let the OS transfer focus back
   setTimeout(() => {
-    // Create a PowerShell script to send Ctrl+V
-    const psScript = `
-      Add-Type -TypeDefinition @"
-        using System;
-        using System.Runtime.InteropServices;
-        public class KeySim {
-          [DllImport("user32.dll")]
-          public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-          public const byte VK_CONTROL = 0x11;
-          public const byte VK_V = 0x56;
-          public const uint KEYEVENTF_KEYDOWN = 0x0000;
-          public const uint KEYEVENTF_KEYUP = 0x0002;
-          public static void SendCtrlV() {
-            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
-            keybd_event(VK_V, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
-            keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-          }
-        }
-"@
-      [KeySim]::SendCtrlV()
-    `
+    // 5. Simulate Ctrl+V using Windows API via PowerShell - more reliable than SendKeys
+    const tempDir = require('os').tmpdir()
+    const scriptPath = path.join(tempDir, 'paste_script.ps1')
     
-    exec(`powershell -ExecutionPolicy Bypass -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, (error: Error | null) => {
+    // Using Windows API keybd_event which is more reliable
+    const psScript = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class KeySim {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    public const byte VK_CONTROL = 0x11;
+    public const byte VK_V = 0x56;
+    public const uint KEYEVENTF_KEYDOWN = 0x0000;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public static void SendCtrlV() {
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
+        keybd_event(VK_V, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
+        keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
+}
+"@
+[KeySim]::SendCtrlV()
+`
+    
+    fs.writeFileSync(scriptPath, psScript, 'utf8')
+    
+    exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, (error: Error | null) => {
+      // Clean up temp file
+      try {
+        fs.unlinkSync(scriptPath)
+      } catch (e) {}
+      
       if (error) {
         console.error('[Paste] Error pasting:', error)
       } else {
         console.log('[Paste] Sent Ctrl+V to previous window')
       }
+      
+      // 6. Restore old clipboard after a short delay
+      setTimeout(() => {
+        clipboard.writeText(previousClipboard)
+        console.log('[Paste] Restored clipboard')
+      }, 50)
     })
-  }, 100)
+  }, 50)
 }
 
 function createWindow(): void {
@@ -419,7 +450,7 @@ function createTray(): void {
 function registerGlobalHotkey(): void {
   // Load saved hotkey or use default
   const hotkey = loadHotkey()
-  
+   
   const registered = globalShortcut.register(hotkey, () => {
     console.log('[Hotkey] Triggered:', hotkey)
     if (mainWindow) {
@@ -435,7 +466,10 @@ function registerGlobalHotkey(): void {
   } else {
     console.error('[Hotkey] Failed to register:', hotkey)
   }
-  
+}
+
+// Register IPC handlers for hotkey management
+function registerHotkeyHandlers(): void {
   // IPC handlers for hotkey management
   ipcMain.handle('register-hotkey', (_, hotkey: string) => {
     try {
@@ -447,6 +481,10 @@ function registerGlobalHotkey(): void {
         return false
       }
       
+      // Update current hotkey
+      currentHotkey = hotkey
+      
+      // Register with globalShortcut for toggle mode
       const result = globalShortcut.register(hotkey, () => {
         if (mainWindow) {
           if (!mainWindow.isVisible()) {
@@ -460,6 +498,8 @@ function registerGlobalHotkey(): void {
       if (result) {
         saveHotkey(hotkey)
         console.log('[Hotkey] Registered:', hotkey)
+        // Notify renderer to update hotkey display
+        mainWindow?.webContents.send('hotkey-changed', hotkey)
       } else {
         console.error('[Hotkey] Failed to register:', hotkey)
       }
@@ -541,6 +581,7 @@ app.whenReady().then(() => {
   createAppMenu()
   registerGlobalHotkey()
   registerWhisperHandlers()
+  registerHotkeyHandlers()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
