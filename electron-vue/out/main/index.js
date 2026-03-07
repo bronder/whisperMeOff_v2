@@ -664,6 +664,10 @@ electron.app.whenReady().then(() => {
   electron.ipcMain.handle("node-version", () => {
     return process.versions.node;
   });
+  electron.ipcMain.handle("copy-to-clipboard", (_, text) => {
+    electron.clipboard.writeText(text);
+    return true;
+  });
   createWindow();
   createTray();
   createAppMenu();

@@ -29,7 +29,9 @@ const api = {
     checkModel: () => electron.ipcRenderer.invoke("whisper:check-model"),
     transcribe: (audioPath) => electron.ipcRenderer.invoke("whisper:transcribe", audioPath),
     saveAudio: (audioData) => electron.ipcRenderer.invoke("whisper:save-audio", audioData)
-  }
+  },
+  // Clipboard - works when window is not focused
+  copyToClipboard: (text) => electron.ipcRenderer.invoke("copy-to-clipboard", text)
 };
 if (process.contextIsolated) {
   try {

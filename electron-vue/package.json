@@ -12,20 +12,12 @@
       "output": "dist"
     },
     "files": [
-      "out/**/*",
-      "flatrobot.ico"
-    ],
-    "extraResources": [
-      {
-        "from": "../flatrobot.ico",
-        "to": "flatrobot.ico"
-      }
+      "out/**/*"
     ],
     "win": {
       "target": [
         "nsis"
-      ],
-      "icon": "../flatrobot.ico"
+      ]
     },
     "nsis": {
       "oneClick": false,

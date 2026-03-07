@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, Tray, Menu, globalShortcut, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Tray, Menu, globalShortcut, nativeImage, clipboard } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerWhisperHandlers } from './whisperService'
@@ -338,6 +338,12 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.handle('node-version', () => {
     return process.versions.node
+  })
+
+  // Clipboard handler - works even when window is not focused
+  ipcMain.handle('copy-to-clipboard', (_, text: string) => {
+    clipboard.writeText(text)
+    return true
   })
 
   createWindow()

@@ -33,7 +33,10 @@ const api = {
     checkModel: () => ipcRenderer.invoke('whisper:check-model'),
     transcribe: (audioPath: string) => ipcRenderer.invoke('whisper:transcribe', audioPath),
     saveAudio: (audioData: ArrayBuffer) => ipcRenderer.invoke('whisper:save-audio', audioData)
-  }
+  },
+
+  // Clipboard - works when window is not focused
+  copyToClipboard: (text: string) => ipcRenderer.invoke('copy-to-clipboard', text)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

@@ -316,9 +316,9 @@ const stopRecording = async () => {
       transcriptionResult.value = result.text
       statusText.value = 'Transcription complete!'
       
-      // Copy to clipboard
+      // Copy to clipboard - use Electron API so it works when window is not focused
       try {
-        await navigator.clipboard.writeText(result.text)
+        await window.api.copyToClipboard(result.text)
         statusText.value = 'Copied to clipboard!'
       } catch {
         statusText.value = 'Transcription complete!'

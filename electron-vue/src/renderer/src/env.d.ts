@@ -71,6 +71,7 @@ interface Api {
   openSettingsWindow: () => Promise<void>
   onHotkeyTriggered: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
+  copyToClipboard: (text: string) => Promise<boolean>
   whisper: WhisperApi
 }
 
