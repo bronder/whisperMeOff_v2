@@ -1,0 +1,62 @@
+{
+  "name": "electron-vue",
+  "version": "1.0.0",
+  "description": "Electron + Vue desktop application",
+  "main": "./out/main/index.js",
+  "author": "Developer",
+  "license": "MIT",
+  "build": {
+    "appId": "com.whisperMeOff.app",
+    "productName": "whisperMeOff",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "flatrobot.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "../flatrobot.ico",
+        "to": "flatrobot.ico"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "../flatrobot.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "postinstall": "electron-builder install-app-deps",
+    "build:win": "npm run build && electron-builder --win --config",
+    "build:mac": "npm run build && electron-builder --mac --config",
+    "build:linux": "npm run build && electron-builder --linux --config"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@kutalia/whisper-node-addon": "^1.1.0",
+    "@xenova/transformers": "^2.17.2",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.13",
+    "whisper-node": "^1.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vue-tsc": "^2.2.0"
+  }
+}
