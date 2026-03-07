@@ -1,5 +1,25 @@
 <template>
   <div class="container">
+    <!-- Slide-out Menu -->
+    <div class="menu-toggle" @click="menuOpen = !menuOpen">
+      ☰
+    </div>
+    <div class="sidebar" :class="{ open: menuOpen }">
+      <div class="sidebar-header">
+        <h3>Menu</h3>
+        <button class="close-menu" @click="menuOpen = false">✕</button>
+      </div>
+      <div class="sidebar-content">
+        <button v-if="!showSettings" class="menu-item" @click="showSettings = true; menuOpen = false">
+          ⚙️ Settings
+        </button>
+        <button v-else class="menu-item" @click="showSettings = false; menuOpen = false">
+          🏠 Go Home
+        </button>
+      </div>
+    </div>
+    <div class="sidebar-overlay" :class="{ open: menuOpen }" @click="menuOpen = false"></div>
+
     <!-- Settings Window - Only show settings -->
     <template v-if="isSettingsWindow">
       <!-- Settings Panel -->
@@ -100,39 +120,25 @@
 
           <div class="setting-group">
             <label>Llama Model Path</label>
-            <div class="model-status">
-              <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
-              <span v-else class="no-model">No model selected</span>
+            <div class="path-row">
+              <div class="model-status path-status">
+                <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
+                <span v-else class="no-model">No model selected</span>
+              </div>
+              <button class="test-button secondary select-btn" @click="selectLlamaModel">
+                📁 Select
+              </button>
             </div>
           </div>
 
           <div class="button-row">
-            <button class="test-button secondary" @click="selectLlamaModel">
-              📁 Select Llama Model
-            </button>
             <button class="test-button secondary" @click="browseHuggingFace">
               🌐 Browse HuggingFace
             </button>
           </div>
 
           <div class="setting-group">
-            <label>Download Model</label>
-            <div class="model-download-list">
-              <button 
-                v-for="model in availableLlamaModels" 
-                :key="model.id"
-                class="test-button secondary model-download-btn"
-                @click="downloadLlamaModel(model.id)"
-                :disabled="isDownloadingLlama"
-              >
-                ⬇️ {{ model.name }} ({{ model.size }})
-              </button>
-            </div>
-            <p v-if="isDownloadingLlama" class="download-status">Downloading... {{ downloadProgress }}%</p>
-          </div>
-
-          <div class="setting-group">
-            <label>Or enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
+            <label>Enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
             <div class="custom-model-row">
               <input 
                 type="text" 
@@ -203,7 +209,7 @@
     <!-- Main Window - Show all UI -->
     <template v-else>
       <!-- Status Header -->
-      <div class="setting-group status-section">
+      <div class="setting-group status-section" v-if="!showSettings">
         <div class="status-row">
           <div class="status-indicator" :class="{ recording: isRecording }">
             <span class="status-dot"></span>
@@ -231,7 +237,7 @@
       </div>
        
       <!-- Recording Card with VU Meter -->
-      <div class="card recording-card" :class="{ recording: isRecording }">
+      <div class="card recording-card" :class="{ recording: isRecording }" v-if="!showSettings">
         <!-- Waveform Visualizer -->
         <WaveformVisualizer 
           :analyser="analyserNode" 
@@ -340,21 +346,20 @@
 
         <div class="setting-group">
           <label>Model Status</label>
-          <div class="model-status">
-            <span v-if="modelPath">{{ modelPath }}</span>
-            <span v-else class="no-model">No model selected</span>
+          <div class="path-row">
+            <div class="model-status path-status">
+              <span v-if="modelPath">{{ modelPath }}</span>
+              <span v-else class="no-model">No model selected</span>
+            </div>
+            <button class="test-button select-btn" @click="selectModel">
+              📁 Select
+            </button>
           </div>
         </div>
 
         <div class="setting-group">
           <button class="test-button" @click="downloadModel" :disabled="isDownloading || !hasBinary">
             {{ isDownloading ? 'Downloading...' : modelPath ? '✅ Model Ready' : '⬇️ Download Model' }}
-          </button>
-        </div>
-
-        <div class="setting-group">
-          <button class="test-button secondary" @click="selectModel">
-            📁 Select Existing Model
           </button>
         </div>
       </div>
@@ -378,36 +383,19 @@
 
         <div class="setting-group">
           <label>Llama Model Path</label>
-          <div class="model-status">
-            <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
-            <span v-else class="no-model">No model selected</span>
-          </div>
-        </div>
-
-        <div class="setting-group">
-          <button class="test-button secondary" @click="selectLlamaModel">
-            📁 Select Llama Model
-          </button>
-        </div>
-
-        <div class="setting-group">
-          <label>Download Model</label>
-          <div class="model-download-list">
-            <button 
-              v-for="model in availableLlamaModels" 
-              :key="model.id"
-              class="test-button secondary model-download-btn"
-              @click="downloadLlamaModel(model.id)"
-              :disabled="isDownloadingLlama"
-            >
-              ⬇️ {{ model.name }} ({{ model.size }})
+          <div class="path-row">
+            <div class="model-status path-status">
+              <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
+              <span v-else class="no-model">No model selected</span>
+            </div>
+            <button class="test-button secondary select-btn" @click="selectLlamaModel">
+              📁 Select
             </button>
           </div>
-          <p v-if="isDownloadingLlama" class="download-status">Downloading... {{ downloadProgress }}%</p>
         </div>
 
         <div class="setting-group">
-          <label>Or enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
+          <label>Enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
           <div class="custom-model-row">
             <input 
               type="text" 
@@ -460,12 +448,15 @@
         </div>
       </div>
 
-      <button class="save-button" @click="saveSettings">Save Settings</button>
+      <div class="button-row-right">
+        <button class="cancel-button" @click="cancelSettings">Cancel</button>
+        <button class="save-button" @click="saveSettings">Save Settings</button>
+      </div>
     </div>
     </template>
 
     <!-- Transcription History -->
-    <div class="card transcription-history" v-if="transcriptionHistory.length > 0">
+    <div class="card transcription-history" v-if="transcriptionHistory.length > 0 && !showSettings">
       <h2>Recent Transcriptions</h2>
       <div class="transcription-list">
         <div v-for="(item, index) in transcriptionHistory" :key="index" class="transcription-item">
@@ -508,6 +499,7 @@ const audioDevices = ref<MediaDeviceInfo[]>([])
 const transcriptionResult = ref('')
 const transcriptionHistory = ref<{ text: string; prompt?: string }[]>([])
 const showSettings = ref(false)
+const menuOpen = ref(false)
 const activeTab = ref('audio')
 const audioLevel = ref(0)
 const analyserNode = ref<AnalyserNode | null>(null)
@@ -737,6 +729,12 @@ const saveSettings = async () => {
 // Save settings and close window (for settings window)
 const saveSettingsAndClose = async () => {
   await saveSettings()
+  // Close the settings window
+  window.close()
+}
+
+// Cancel settings and close window (for settings window)
+const cancelSettings = async () => {
   // Close the settings window
   window.close()
 }
@@ -1009,7 +1007,8 @@ onMounted(async () => {
   
   // Listen for settings open from tray - only for main window
   cleanupSettings = window.api.onOpenSettings(() => {
-    window.api.openSettingsWindow()
+    showSettings.value = true
+    menuOpen.value = false
   })
   
   // Get audio devices
@@ -1045,10 +1044,107 @@ body {
   color: #fff;
 }
 
+/* Menu Toggle */
+.menu-toggle {
+  position: fixed;
+  top: 15px;
+  left: 15px;
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 1001;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #fff;
+}
+
+.menu-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Sidebar */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: -280px;
+  width: 280px;
+  height: 100vh;
+  background: rgba(20, 20, 40, 0.98);
+  z-index: 1002;
+  transition: left 0.3s ease;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar.open {
+  left: 0;
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  color: #00d4ff;
+}
+
+.close-menu {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.sidebar-content {
+  padding: 20px;
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  text-align: left;
+  margin-bottom: 10px;
+}
+
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Sidebar Overlay */
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.sidebar-overlay.open {
+  opacity: 1;
+  visibility: visible;
+}
+
 .container {
   max-width: 100%;
   margin: 0 auto;
-  padding: 40px 20px;
+  padding: 40px 20px 40px 80px;
 }
 
 .header {
@@ -1231,6 +1327,7 @@ h1 {
 
 .setting-group {
   margin-bottom: 15px;
+  text-align: left;
 }
 
 .status-section {
@@ -1243,16 +1340,17 @@ h1 {
   display: block;
   margin-bottom: 5px;
   color: #aaa;
+  text-align: left;
 }
 
 .hotkey-input, .select-input {
   width: 100%;
-  padding: 12px;
+  padding: 6px 12px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.1);
   color: white;
-  font-size: 1rem;
+  font-size: 0.85rem;
 }
 
 .select-input option {
@@ -1316,31 +1414,51 @@ h1 {
 }
 
 .save-button {
-  width: 100%;
-  padding: 12px;
+  padding: 8px 16px;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   background: #22c55e;
   color: white;
-  font-size: 1rem;
+  font-size: 0.85rem;
   cursor: pointer;
-  margin-top: 10px;
 }
 
 .save-button:hover {
   background: #16a34a;
 }
 
+.button-row-right {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.cancel-button {
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: white;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.cancel-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .test-button {
   width: 100%;
-  padding: 10px;
+  padding: 6px 12px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.1);
   color: white;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   cursor: pointer;
   transition: background 0.2s;
+  text-align: left;
 }
 
 .test-button:hover {
@@ -1368,18 +1486,31 @@ h1 {
 .custom-model-row {
   display: flex;
   gap: 10px;
+  align-items: stretch;
+}
+
+.custom-model-row .test-button {
+  width: auto;
+  white-space: nowrap;
+  padding: 6px 16px;
+  background: #3b82f6;
+  border: none;
+}
+
+.custom-model-row .test-button:hover {
+  background: #2563eb;
 }
 
 .model-input {
   flex: 1;
-  padding: 8px 12px;
+  padding: 4px 12px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   color: #ffffff;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   caret-color: #ffffff;
-  min-height: 36px;
+  min-height: 28px;
 }
 
 .model-input:focus {
@@ -1397,6 +1528,28 @@ h1 {
   border-radius: 6px;
   font-size: 0.85rem;
   word-break: break-all;
+  text-align: left;
+}
+
+.path-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.path-status {
+  flex: 1;
+}
+
+.select-btn {
+  width: auto;
+  white-space: nowrap;
+  background: #3b82f6 !important;
+  border: none;
+}
+
+.select-btn:hover {
+  background: #2563eb !important;
 }
 
 .model-status .no-model {

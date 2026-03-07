@@ -190,51 +190,23 @@ function createWindow(): void {
   }
 }
 
-function createSettingsWindow(): void {
-  // If settings window already exists, focus it
-  if (settingsWindow) {
-    settingsWindow.focus()
-    return
-  }
-  
-  // Get the path to the icon
-  const iconPath = join(__dirname, '../../../flatrobot.ico')
-  const icon = nativeImage.createFromPath(iconPath)
-  
-  settingsWindow = new BrowserWindow({
-    width: 600,
-    height: 725,
-    title: 'whisperMeOff - Settings',
-    minWidth: 400,
-    minHeight: 400,
-    show: false,
-    resizable: true,
-    icon: icon,
-    parent: mainWindow || undefined,
-    modal: false,
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-      contextIsolation: true,
-      nodeIntegration: false
+function showMainWindowWithSettings(): void {
+  // Show and focus the main window
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
     }
-  })
-
-  settingsWindow.on('ready-to-show', () => {
-    settingsWindow?.show()
-  })
-
-  settingsWindow.on('closed', () => {
-    settingsWindow = null
-  })
-
-  // Load settings page with query param
-  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    settingsWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?settings=true`)
-  } else {
-    settingsWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { settings: 'true' } })
+    mainWindow.show()
+    mainWindow.focus()
+    
+    // Send message to renderer to show settings
+    mainWindow.webContents.send('open-settings')
   }
+}
+
+function createSettingsWindow(): void {
+  // Now use the same approach - show main window with settings
+  showMainWindowWithSettings()
 }
 
 function createRecordingOverlay(): void {
