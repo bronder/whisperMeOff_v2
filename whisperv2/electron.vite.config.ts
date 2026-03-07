@@ -4,7 +4,12 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@electron-toolkit/utils', 'electron'] })]
+    plugins: [externalizeDepsPlugin({ exclude: ['@electron-toolkit/utils'] })],
+    resolve: {
+      alias: {
+        electron: resolve('node_modules/electron')
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()]

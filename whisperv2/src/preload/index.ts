@@ -11,6 +11,9 @@ const api = {
   // Settings window
   openSettingsWindow: () => ipcRenderer.invoke('open-settings-window'),
   
+  // Open URL in browser
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
+   
   // Event listeners
   onHotkeyTriggered: (callback: () => void) => {
     ipcRenderer.on('hotkey-triggered', callback)
@@ -45,6 +48,19 @@ const api = {
     checkModel: () => ipcRenderer.invoke('whisper:check-model'),
     transcribe: (audioPath: string) => ipcRenderer.invoke('whisper:transcribe', audioPath),
     saveAudio: (audioData: ArrayBuffer) => ipcRenderer.invoke('whisper:save-audio', audioData)
+  },
+
+  // Llama.cpp text processing
+  llama: {
+    getSettings: () => ipcRenderer.invoke('llama:get-settings'),
+    saveSettings: (settings: any) => ipcRenderer.invoke('llama:save-settings', settings),
+    checkBinary: () => ipcRenderer.invoke('llama:check-binary'),
+    selectModel: () => ipcRenderer.invoke('llama:select-model'),
+    processText: (text: string) => ipcRenderer.invoke('llama:process-text', text),
+    getModels: () => ipcRenderer.invoke('llama:get-models'),
+    downloadModel: (modelId: string) => ipcRenderer.invoke('llama:download-model', modelId),
+    downloadCustomModel: (modelPath: string) => ipcRenderer.invoke('llama:download-custom-model', modelPath),
+    getModelsPath: () => ipcRenderer.invoke('llama:get-models-path')
   },
 
   // Clipboard - works when window is not focused

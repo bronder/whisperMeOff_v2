@@ -19,7 +19,7 @@
             :class="{ active: activeTab === 'transcription' }"
             @click="activeTab = 'transcription'"
           >
-            📝 whisper.cpp
+            📝 AI
           </button>
           <button 
             class="tab-button" 
@@ -66,6 +66,90 @@
             <label>Model Path</label>
             <div class="path-display">{{ modelPath || 'Not selected' }}</div>
             <button class="btn btn-primary" style="margin-top: 10px;" @click="selectModelFile">Select Model File</button>
+          </div>
+
+          <!-- Llama.cpp Post-processing -->
+          <div class="setting-group">
+            <label>
+              <input type="checkbox" v-model="llamaEnabled" @change="saveLlamaSettings" />
+              Enable llama.cpp text formatting
+            </label>
+          </div>
+
+          <div v-if="llamaEnabled">
+            <div class="setting-group">
+              <label>Llama Binary</label>
+              <div class="model-status">
+                <span v-if="hasLlamaBinary">✅ Installed</span>
+                <span v-else class="no-model">Not installed</span>
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <label>Llama Model Path</label>
+              <div class="model-status">
+                <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
+                <span v-else class="no-model">No model selected</span>
+              </div>
+            </div>
+
+            <div class="button-row">
+              <button class="test-button secondary" @click="selectLlamaModel">
+                📁 Select Llama Model
+              </button>
+              <button class="test-button secondary" @click="browseHuggingFace">
+                🌐 Browse HuggingFace
+              </button>
+            </div>
+
+            <div class="setting-group">
+              <label>Download Model</label>
+              <div class="model-download-list">
+                <button 
+                  v-for="model in availableLlamaModels" 
+                  :key="model.id"
+                  class="test-button secondary model-download-btn"
+                  @click="downloadLlamaModel(model.id)"
+                  :disabled="isDownloadingLlama"
+                >
+                  ⬇️ {{ model.name }} ({{ model.size }})
+                </button>
+              </div>
+              <p v-if="isDownloadingLlama" class="download-status">Downloading... {{ downloadProgress }}%</p>
+            </div>
+
+            <div class="setting-group">
+              <label>Or enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
+              <div class="custom-model-row">
+                <input 
+                  type="text" 
+                  v-model="llamaModelId" 
+                  placeholder="e.g., ggml-org/tinygemma3-GGUF:Q8_0"
+                  class="model-input"
+                  @blur="saveLlamaSettings"
+                />
+                <button 
+                  class="test-button secondary" 
+                  @click="downloadFromHuggingFace"
+                  :disabled="isDownloadingLlama || !llamaModelId"
+                >
+                  ⬇️ Download
+                </button>
+              </div>
+              <p class="hint">Enter a HuggingFace model ID with optional quantization (e.g., :Q8_0, :Q4_K_M)</p>
+            </div>
+
+            <div class="setting-group">
+              <label>HuggingFace Token (optional, for private models or higher rate limits):</label>
+              <input 
+                type="password" 
+                v-model="huggingFaceToken" 
+                placeholder="hf_xxxxxxxxxxxxx"
+                class="model-input"
+                @blur="saveLlamaSettings"
+              />
+              <p class="hint">Get your token from https://huggingface.co/settings/tokens</p>
+            </div>
           </div>
         </div>
 
@@ -154,7 +238,7 @@
           :class="{ active: activeTab === 'transcription' }"
           @click="activeTab = 'transcription'"
         >
-          📝 whisper.cpp
+          📝 AI
         </button>
         <button 
           class="tab-button" 
@@ -244,6 +328,38 @@
             📁 Select Existing Model
           </button>
         </div>
+
+        <!-- Llama.cpp Post-processing -->
+        <div class="setting-group">
+          <label>
+            <input type="checkbox" v-model="llamaEnabled" @change="saveLlamaSettings" />
+            Enable llama.cpp text formatting
+          </label>
+        </div>
+
+        <div v-if="llamaEnabled">
+          <div class="setting-group">
+            <label>Llama Binary</label>
+            <div class="model-status">
+              <span v-if="hasLlamaBinary">✅ Installed</span>
+              <span v-else class="no-model">Not installed</span>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <label>Llama Model Path</label>
+            <div class="model-status">
+              <span v-if="llamaModelPath">{{ llamaModelPath }}</span>
+              <span v-else class="no-model">No model selected</span>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <button class="test-button secondary" @click="selectLlamaModel">
+              📁 Select Llama Model
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- General Settings Tab -->
@@ -292,6 +408,16 @@ const hasBinary = ref(false)
 const translateToEnglish = ref(false)
 const selectedLanguage = ref('auto')
 const pushToTalk = ref(true)
+const llamaEnabled = ref(false)
+const llamaModelPath = ref('')
+const llamaModelId = ref('')
+const huggingFaceToken = ref('')
+const hasLlamaBinary = ref(false)
+const isProcessingLlama = ref(false)
+const availableLlamaModels = ref<{ id: string; name: string; size: string; url: string }[]>([])
+const isDownloadingLlama = ref(false)
+const downloadProgress = ref(0)
+const customModelPath = ref('')
 const audioDevices = ref<MediaDeviceInfo[]>([])
 const transcriptionResult = ref('')
 const transcriptionHistory = ref<string[]>([])
@@ -394,9 +520,26 @@ const stopRecording = async () => {
     const result = await window.api.whisper.transcribe(saveResult.path)
     
     if (result.success && result.text) {
-      transcriptionResult.value = result.text
+      let finalText = result.text
+
+      // Process with llama.cpp if enabled (either HuggingFace model ID or local file)
+      if (llamaEnabled.value && hasLlamaBinary.value && (llamaModelId.value || llamaModelPath.value)) {
+        statusText.value = 'Formatting with llama.cpp...'
+        try {
+          const llamaResult = await window.api.llama.processText(result.text)
+          if (llamaResult.success && llamaResult.formattedText) {
+            finalText = llamaResult.formattedText
+            statusText.value = 'Formatting complete!'
+          }
+        } catch (error: any) {
+          console.error('[App] Llama processing error:', error)
+          statusText.value = 'Transcription complete (llama failed)'
+        }
+      }
+
+      transcriptionResult.value = finalText
       // Add to history (keep last 3)
-      transcriptionHistory.value.unshift(result.text)
+      transcriptionHistory.value.unshift(finalText)
       if (transcriptionHistory.value.length > 3) {
         transcriptionHistory.value.pop()
       }
@@ -404,7 +547,7 @@ const stopRecording = async () => {
       
       // Copy to clipboard and paste to previous window
       try {
-        await window.api.copyToClipboard(result.text)
+        await window.api.copyToClipboard(finalText)
         statusText.value = 'Copied to clipboard!'
         
         // Try to paste to the previous window
@@ -575,6 +718,116 @@ const selectModel = async () => {
   }
 }
 
+// Save llama settings
+const saveLlamaSettings = async () => {
+  try {
+    await window.api.llama.saveSettings({
+      enabled: llamaEnabled.value,
+      modelPath: llamaModelPath.value,
+      modelId: llamaModelId.value,
+      huggingFaceToken: huggingFaceToken.value
+    })
+  } catch (error: any) {
+    console.error('[App] Error saving llama settings:', error)
+  }
+}
+
+// Select llama model
+const selectLlamaModel = async () => {
+  try {
+    const result = await window.api.llama.selectModel()
+    if (result.success && result.path) {
+      llamaModelPath.value = result.path
+      await saveLlamaSettings()
+    }
+  } catch (error: any) {
+    console.error('[App] Error selecting llama model:', error)
+  }
+}
+
+// Browse HuggingFace for GGUF models
+const browseHuggingFace = () => {
+  console.log('[App] browseHuggingFace called')
+  const url = 'https://huggingface.co/models?num_parameters=min:0,max:6B&sort=downloads&search=gguf'
+  if (window.api?.openExternal) {
+    window.api.openExternal(url)
+  } else {
+    console.error('[App] window.api.openExternal not available')
+    // Fallback: open in same window
+    window.open(url, '_blank')
+  }
+}
+
+const downloadLlamaModel = async (modelId: string) => {
+  try {
+    isDownloadingLlama.value = true
+    downloadProgress.value = 0
+    
+    const result = await window.api.llama.downloadModel(modelId)
+    if (result.success) {
+      llamaModelPath.value = result.path
+      await saveLlamaSettings()
+      alert('Model downloaded successfully!')
+    } else {
+      alert('Download failed: ' + result.error)
+    }
+  } catch (error: any) {
+    console.error('[App] Error downloading llama model:', error)
+    alert('Download failed: ' + error.message)
+  } finally {
+    isDownloadingLlama.value = false
+    downloadProgress.value = 0
+  }
+}
+
+const downloadCustomModel = async () => {
+  if (!customModelPath.value) return
+  
+  try {
+    isDownloadingLlama.value = true
+    downloadProgress.value = 0
+    
+    const result = await window.api.llama.downloadCustomModel(customModelPath.value)
+    if (result.success) {
+      llamaModelPath.value = result.path
+      await saveLlamaSettings()
+      alert('Model downloaded successfully!')
+    } else {
+      alert('Download failed: ' + result.error)
+    }
+  } catch (error: any) {
+    console.error('[App] Error downloading custom llama model:', error)
+    alert('Download failed: ' + error.message)
+  } finally {
+    isDownloadingLlama.value = false
+    downloadProgress.value = 0
+  }
+}
+
+const downloadFromHuggingFace = async () => {
+  if (!llamaModelId.value) return
+  
+  try {
+    isDownloadingLlama.value = true
+    downloadProgress.value = 0
+    
+    const result = await window.api.llama.downloadCustomModel(llamaModelId.value)
+    if (result.success) {
+      llamaModelPath.value = result.path
+      await saveLlamaSettings()
+      alert('Model downloaded successfully!')
+    } else {
+      alert('Download failed: ' + result.error)
+    }
+  } catch (error: any) {
+    console.error('[App] Error downloading from HuggingFace:', error)
+    alert('Download failed: ' + error.message)
+  } finally {
+    isDownloadingLlama.value = false
+    downloadProgress.value = 0
+  }
+}
+
 // Load settings
 const loadSettings = async () => {
   // Check binary status
@@ -595,7 +848,27 @@ const loadSettings = async () => {
   } catch (e) {
     console.error('[App] Error loading settings from main:', e)
   }
-  
+
+  // Load llama settings
+  try {
+    const llamaSettings = await window.api.llama.getSettings()
+    llamaEnabled.value = llamaSettings.enabled || false
+    llamaModelPath.value = llamaSettings.modelPath || ''
+    llamaModelId.value = llamaSettings.modelId || ''
+    huggingFaceToken.value = llamaSettings.huggingFaceToken || ''
+    hasLlamaBinary.value = await window.api.llama.checkBinary()
+    
+    // Load available models
+    try {
+      const models = await window.api.llama.getModels()
+      availableLlamaModels.value = models
+    } catch (e) {
+      console.error('[App] Error loading available llama models:', e)
+    }
+  } catch (e) {
+    console.error('[App] Error loading llama settings:', e)
+  }
+   
   // Load hotkey
   try {
     const hotkey = await window.api.getHotkey()
@@ -984,6 +1257,41 @@ h1 {
 
 .test-button.secondary {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+}
+
+.button-row .test-button {
+  flex: 1;
+}
+
+.custom-model-row {
+  display: flex;
+  gap: 10px;
+}
+
+.model-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 0.9rem;
+  caret-color: #ffffff;
+  min-height: 36px;
+}
+
+.model-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.model-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .model-status {

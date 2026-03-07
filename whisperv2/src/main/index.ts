@@ -1,8 +1,10 @@
 import { app, shell, BrowserWindow, ipcMain, Tray, Menu, globalShortcut, nativeImage, clipboard } from 'electron'
 import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerWhisperHandlers } from './whisperService'
 import * as fs from 'fs'
+
+// Check if running in development mode
+const isDev = process.env.NODE_ENV !== 'production'
 
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
@@ -176,7 +178,7 @@ function createWindow(): void {
   })
 
   // HMR for renderer base on electron-vite cli.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
@@ -222,7 +224,7 @@ function createSettingsWindow(): void {
   })
 
   // Load settings page with query param
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     settingsWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?settings=true`)
   } else {
     settingsWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { settings: 'true' } })
@@ -540,12 +542,28 @@ function registerHotkeyHandlers(): void {
 
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.whispermeoff')
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.whispermeoff')
+  }
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
   app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+    // Watch window shortcuts - simplified version
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown') {
+        // F12 to toggle DevTools
+        if (input.key === 'F12') {
+          window.webContents.toggleDevTools()
+          event.preventDefault()
+        }
+        // Ctrl+R to reload (only in dev)
+        if (input.control && input.key.toLowerCase() === 'r' && isDev) {
+          window.webContents.reload()
+          event.preventDefault()
+        }
+      }
+    })
   })
 
   // IPC test

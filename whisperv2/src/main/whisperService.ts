@@ -1,4 +1,4 @@
-import { ipcMain, app, dialog } from 'electron'
+import { ipcMain, app, dialog, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
@@ -14,6 +14,13 @@ interface WhisperSettings {
   pushToTalk: boolean
 }
 
+interface LlamaSettings {
+  enabled: boolean
+  modelPath: string       // Local file path (kept for backward compatibility)
+  modelId: string         // HuggingFace model ID (e.g., "model-name:Q8_0")
+  huggingFaceToken?: string  // HuggingFace API token for private models
+}
+
 // Default settings
 let whisperSettings: WhisperSettings = {
   modelPath: '',
@@ -21,6 +28,179 @@ let whisperSettings: WhisperSettings = {
   language: 'auto',
   translate: false,
   pushToTalk: false
+}
+
+// Default llama settings
+let llamaSettings: LlamaSettings = {
+  enabled: false,
+  modelPath: '',
+  modelId: ''
+}
+
+// node-llama-cpp - will be loaded dynamically
+let nodeLlama: any = null
+let llamaBinPath: string
+
+function getLlamaBinPath(): string {
+  if (!llamaBinPath) {
+    // Check if user has their own llama.cpp build
+    const userLlamaPath = 'C:\\Utils\\llama.cpp\\build\\bin\\llama-cli.exe'
+    if (fs.existsSync(userLlamaPath)) {
+      llamaBinPath = userLlamaPath
+    } else {
+      const userDataPath = app.getPath('userData')
+      llamaBinPath = path.join(userDataPath, 'llama', 'llama-cli.exe')
+    }
+  }
+  return llamaBinPath
+}
+
+// Available llama models for download
+interface LlamaModel {
+  id: string
+  name: string
+  size: string
+  memory: string
+  description: string
+  url: string
+}
+
+function getLlamaModelsPath(): string {
+  const userDataPath = app.getPath('userData')
+  return path.join(userDataPath, 'llama-models')
+}
+
+const availableLlamaModels: LlamaModel[] = [
+  {
+    id: 'qwen2.5-0.5b',
+    name: 'Qwen2.5-0.5B Instruct',
+    size: '~370MB',
+    memory: '~1GB RAM',
+    description: 'Fast, low memory, great for formatting',
+    url: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf'
+  }
+]
+
+// Download llama model
+async function downloadLlamaModel(modelId: string, progressCallback?: (progress: number) => void): Promise<{ success: boolean; path?: string; error?: string }> {
+  const model = availableLlamaModels.find(m => m.id === modelId)
+  if (!model) {
+    return { success: false, error: 'Model not found' }
+  }
+
+  const modelsPath = getLlamaModelsPath()
+  if (!fs.existsSync(modelsPath)) {
+    fs.mkdirSync(modelsPath, { recursive: true })
+  }
+
+  const modelFileName = `${modelId}.gguf`
+  const modelPath = path.join(modelsPath, modelFileName)
+
+  // Check if already downloaded
+  if (fs.existsSync(modelPath)) {
+    console.log('[Llama] Model already exists:', modelPath)
+    return { success: true, path: modelPath }
+  }
+
+  console.log('[Llama] Downloading model:', model.name)
+  console.log('[Llama] URL:', model.url)
+
+  return new Promise((resolve) => {
+    const { spawn } = require('child_process')
+    
+    // Use curl for download (more reliable than PowerShell)
+    // Use -L to follow redirects, -f to fail on HTTP errors, -o for output
+    // Add User-Agent to work with HuggingFace
+    const curl = spawn('curl', [
+      '-L', '-f', '-o', modelPath,
+      '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      model.url
+    ], { shell: true })
+
+    let stderrOutput = ''
+    
+    curl.stderr.on('data', (data: Buffer) => {
+      stderrOutput += data.toString()
+    })
+
+    curl.stdout.on('data', (data: Buffer) => {
+      const output = data.toString()
+      // Extract progress if available
+      if (output.includes('%')) {
+        const match = output.match(/(\d+)%/)
+        if (match && progressCallback) {
+          progressCallback(parseInt(match[1]))
+        }
+      }
+    })
+
+    curl.on('close', (code: number) => {
+      // Check if file exists and has content (at least 1MB for a valid model)
+      const MIN_SIZE = 1024 * 1024 // 1MB minimum
+      const fileStats = fs.existsSync(modelPath) ? fs.statSync(modelPath) : null
+      
+      if (code === 0 && fileStats && fileStats.size > MIN_SIZE) {
+        console.log('[Llama] Model downloaded successfully:', modelPath, `(${fileStats.size} bytes)`)
+        resolve({ success: true, path: modelPath })
+      } else {
+        // Delete empty or too-small files (likely error pages)
+        if (fileStats && fileStats.size > 0 && fileStats.size < MIN_SIZE) {
+          console.log('[Llama] File too small, deleting:', fileStats.size, 'bytes')
+          try { fs.unlinkSync(modelPath) } catch {}
+        }
+        console.log('[Llama] Curl failed with code:', code, 'stderr:', stderrOutput)
+        
+        // Try PowerShell as fallback
+        console.log('[Llama] Trying PowerShell fallback...')
+        const ps = spawn('powershell', [
+          '-Command',
+          `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('${model.url}', '${modelPath}')`
+        ], { shell: true })
+
+        ps.on('close', (psCode: number) => {
+          const MIN_SIZE = 1024 * 1024 // 1MB minimum
+          const psStats = fs.existsSync(modelPath) ? fs.statSync(modelPath) : null
+          if (psCode === 0 && psStats && psStats.size > MIN_SIZE) {
+            console.log('[Llama] Model downloaded via PowerShell:', modelPath, `(${psStats.size} bytes)`)
+            resolve({ success: true, path: modelPath })
+          } else {
+            // Clean up failed download
+            console.log('[Llama] PowerShell download also failed')
+            if (psStats && psStats.size > 0 && psStats.size < MIN_SIZE) {
+              try { fs.unlinkSync(modelPath) } catch {}
+            }
+            resolve({ success: false, error: 'Download failed. Check console for details.' })
+          }
+        })
+        
+        ps.on('error', (err) => {
+          console.log('[Llama] PowerShell error:', err.message)
+        })
+      }
+    })
+
+    curl.on('error', (err) => {
+      console.log('[Llama] Curl error:', err.message)
+      // Fallback to PowerShell
+      const ps = spawn('powershell', [
+        '-Command',
+        `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('${model.url}', '${modelPath}')`
+      ], { shell: true })
+
+      ps.on('close', (psCode: number) => {
+        const MIN_SIZE = 1024 * 1024 // 1MB minimum
+        const psStats = fs.existsSync(modelPath) ? fs.statSync(modelPath) : null
+        if (psCode === 0 && psStats && psStats.size > MIN_SIZE) {
+          resolve({ success: true, path: modelPath })
+        } else {
+          if (psStats && psStats.size > 0 && psStats.size < MIN_SIZE) {
+            try { fs.unlinkSync(modelPath) } catch {}
+          }
+          resolve({ success: false, error: 'Download failed' })
+        }
+      })
+    })
+  })
 }
 
 let settingsPath: string
@@ -68,8 +248,11 @@ function loadSettings(): void {
     const settingsFile = getSettingsPath()
     if (fs.existsSync(settingsFile)) {
       const data = fs.readFileSync(settingsFile, 'utf-8')
-      whisperSettings = { ...whisperSettings, ...JSON.parse(data) }
+      const allSettings = JSON.parse(data)
+      whisperSettings = { ...whisperSettings, ...allSettings.whisper }
+      llamaSettings = { ...llamaSettings, ...allSettings.llama }
       console.log('[Whisper] Settings loaded:', whisperSettings)
+      console.log('[Llama] Settings loaded:', llamaSettings)
     }
     
     // If no model configured OR saved model doesn't exist, try to use default
@@ -92,10 +275,107 @@ function saveSettings(settings: Partial<WhisperSettings>): void {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true })
     }
-    fs.writeFileSync(settingsFile, JSON.stringify(whisperSettings, null, 2))
+    fs.writeFileSync(settingsFile, JSON.stringify({ whisper: whisperSettings, llama: llamaSettings }, null, 2))
     console.log('[Whisper] Settings saved:', whisperSettings)
   } catch (error) {
     console.error('[Whisper] Error saving settings:', error)
+  }
+}
+
+// Save llama settings to file
+function saveLlamaSettings(settings: Partial<LlamaSettings>): void {
+  llamaSettings = { ...llamaSettings, ...settings }
+  try {
+    const settingsFile = getSettingsPath()
+    const dir = path.dirname(settingsFile)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(settingsFile, JSON.stringify({ whisper: whisperSettings, llama: llamaSettings }, null, 2))
+    console.log('[Llama] Settings saved:', llamaSettings)
+  } catch (error) {
+    console.error('[Llama] Error saving settings:', error)
+  }
+}
+
+// Process text with llama.cpp for formatting using llama-cli
+async function processWithLlama(text: string): Promise<{ success: boolean; formattedText?: string; error?: string }> {
+  const modelPath = llamaSettings.modelPath
+
+  // Check if we have a local file
+  if (!modelPath || !fs.existsSync(modelPath)) {
+    return { success: false, error: 'Llama model not found. Please download a model first.' }
+  }
+
+  try {
+    const { spawn } = require('child_process')
+    
+    // Get llama-cli path
+    const llamaBinPath = getLlamaBinPath()
+    
+    if (!fs.existsSync(llamaBinPath)) {
+      return { success: false, error: 'llama-cli.exe not found. Please install llama.cpp to C:\\Utils\\llama.cpp\\build\\bin\\' }
+    }
+    
+    console.log('[Llama] Using binary:', llamaBinPath)
+    console.log('[Llama] Using model:', modelPath)
+    
+    // Create prompt for text formatting
+    const prompt = `Please format this transcription by adding proper punctuation and paragraph breaks. Just return the formatted text, nothing else.
+
+Transcription:
+${text}
+
+Formatted:`
+
+    // Use llama-cli with simple prompt
+    const args = [
+      '-m', modelPath,
+      '-p', prompt,
+      '-n', '256',
+      '--temp', '0.1',
+      '--no-display'
+    ]
+    
+    console.log('[Llama] Running llama-cli with args:', args.join(' '))
+    
+    return new Promise((resolve) => {
+      const llama = spawn(llamaBinPath, args, { shell: true })
+      
+      let stdout = ''
+      let stderr = ''
+      
+      llama.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString()
+      })
+      
+      llama.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString()
+      })
+      
+      llama.on('close', (code: number) => {
+        console.log('[Llama] llama-cli exit code:', code)
+        console.log('[Llama] stdout:', stdout)
+        console.log('[Llama] stderr:', stderr)
+        
+        if (code === 0 && stdout.trim()) {
+          const formattedText = stdout.trim()
+          console.log('[Llama] Formatted text:', formattedText)
+          resolve({ success: true, formattedText: formattedText || text })
+        } else {
+          console.error('[Llama] Error:', stderr)
+          resolve({ success: false, error: stderr || 'Llama processing failed' })
+        }
+      })
+      
+      llama.on('error', (err: any) => {
+        console.error('[Llama] Spawn error:', err)
+        resolve({ success: false, error: err.message })
+      })
+    })
+  } catch (error: any) {
+    console.error('[Llama] Error:', error)
+    return { success: false, error: error.message || 'Llama processing failed' }
   }
 }
 
@@ -470,6 +750,310 @@ export function registerWhisperHandlers(): void {
       console.error('[Whisper] Error saving audio:', error)
       return { success: false, error: error.message }
     }
+  })
+
+  // ===== Llama.cpp IPC Handlers =====
+
+  // Get llama settings
+  ipcMain.handle('llama:get-settings', () => {
+    return llamaSettings
+  })
+
+  // Save llama settings
+  ipcMain.handle('llama:save-settings', (_, settings: Partial<LlamaSettings>) => {
+    saveLlamaSettings(settings)
+    return llamaSettings
+  })
+
+  // Check if llama binary exists (npm package includes binary)
+  ipcMain.handle('llama:check-binary', () => {
+    // node-llama-cpp package includes the binary, so we just need the package installed
+    return true
+  })
+
+  // Select llama model
+  ipcMain.handle('llama:select-model', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select Llama Model',
+      filters: [
+        { name: 'GGUF Models', extensions: ['gguf'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { success: false }
+    }
+
+    const modelPath = result.filePaths[0]
+    llamaSettings.modelPath = modelPath
+    saveLlamaSettings({ modelPath })
+    return { success: true, path: modelPath }
+  })
+
+  // Process text with llama
+  ipcMain.handle('llama:process-text', async (_, text: string) => {
+    try {
+      return await processWithLlama(text)
+    } catch (error: any) {
+      console.error('[Llama] Error processing text:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // Get available models list
+  ipcMain.handle('llama:get-models', () => {
+    return availableLlamaModels
+  })
+
+  // Download model
+  ipcMain.handle('llama:download-model', async (_, modelId: string) => {
+    console.log('[Llama] Starting download for model:', modelId)
+    const result = await downloadLlamaModel(modelId)
+    
+    if (result.success && result.path) {
+      // Auto-select the downloaded model
+      llamaSettings.modelPath = result.path
+      saveLlamaSettings({ modelPath: result.path })
+    }
+    
+    return result
+  })
+
+  // Download custom model from HuggingFace path
+  ipcMain.handle('llama:download-custom-model', async (_, modelPath: string) => {
+    console.log('[Llama] Starting custom download for:', modelPath)
+    
+    try {
+      const modelsPath = getLlamaModelsPath()
+      if (!fs.existsSync(modelsPath)) {
+        fs.mkdirSync(modelsPath, { recursive: true })
+      }
+      
+      // Check if it's a full URL or just a path
+      let url = ''
+      let filename = ''
+      
+      // Handle model ID with quantization (e.g., "ggml-org/tinygemma3-GGUF:Q8_0")
+      // Extract the base model path and quantization
+      let modelId = modelPath
+      
+      // Check if it's a full URL first
+      if (modelPath.startsWith('http')) {
+        // Full URL provided
+        url = modelPath
+        filename = modelPath.split('/').pop() || 'model.gguf'
+      } else if (modelPath.includes(':')) {
+        // Has quantization suffix, extract the model path
+        const parts = modelPath.split(':')
+        modelId = parts[0]  // e.g., "ggml-org/tinygemma3-GGUF"
+        console.log('[Llama] Extracted model ID:', modelId)
+      } else {
+        modelId = modelPath
+      }
+      
+      if (url) {
+        // Already have full URL
+        // Extract filename from URL
+        filename = url.split('/').pop() || 'model.gguf'
+      } else {
+        // Just the HuggingFace path (e.g., "bartowski/Llama-3.2-3B-Instruct-GGUF")
+        
+        // First, try to find the GGUF file by common patterns
+        const modelNameFromPath = modelId.split('/').pop() || modelId
+        
+        // Common GGUF filename patterns to try
+        const possibleFilenames = [
+          `${modelNameFromPath.toLowerCase()}-q4_k_m.gguf`,
+          `${modelNameFromPath.toLowerCase()}-q4_km.gguf`,
+          `${modelNameFromPath.toLowerCase()}-Q4_K_M.gguf`,
+          `${modelNameFromPath.toLowerCase()}-q5_k_m.gguf`,
+          `${modelNameFromPath.toLowerCase()}-q8_0.gguf`,
+          `${modelNameFromPath.toLowerCase()}.gguf`,
+          'model-q4_k_m.gguf',
+          'model-q5_k_m.gguf',
+          'model.gguf'
+        ]
+        
+        // Try each pattern until one works
+        for (const tryFilename of possibleFilenames) {
+          const tryUrl = `https://huggingface.co/${modelId}/resolve/main/${tryFilename}`
+          console.log('[Llama] Trying URL:', tryUrl)
+          
+          // Check if file exists using HEAD request
+          try {
+            const response = await (globalThis as any).fetch(tryUrl, {
+              method: 'HEAD',
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            })
+            
+            if (response.ok) {
+              url = tryUrl
+              filename = tryFilename
+              console.log('[Llama] Found GGUF file:', filename)
+              break
+            }
+          } catch (e) {
+            // Continue to next pattern
+          }
+        }
+        
+        // If no pattern worked, try the API
+        if (!url) {
+          const apiUrl = `https://huggingface.co/api/models/${modelId}/tree/main`
+          console.log('[Llama] Trying API:', apiUrl)
+          
+          try {
+            const response = await (globalThis as any).fetch(apiUrl, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            })
+            
+            if (response.ok) {
+              const files: any[] = await response.json()
+              console.log('[Llama] API response files:', JSON.stringify(files).slice(0, 500))
+              
+              // Handle different API response formats
+              if (!Array.isArray(files)) {
+                console.log('[Llama] API response is not an array')
+              }
+              
+              // The API uses 'path' not 'name' for the file path
+              const ggufFiles = (Array.isArray(files) ? files : [])
+                .filter((f: any) => f && f.type === 'file' && f.path && f.path.toLowerCase && f.path.toLowerCase().endsWith('.gguf'))
+                .map((f: any) => f.path)
+              
+              console.log('[Llama] API response files:', JSON.stringify(files.slice(0, 5)))
+              
+              if (ggufFiles.length > 0) {
+                filename = ggufFiles[0]
+                url = `https://huggingface.co/${modelId}/resolve/main/${filename}`
+                console.log('[Llama] Found GGUF file via API:', filename)
+              } else {
+                console.log('[Llama] No GGUF files found in API response')
+              }
+            }
+          } catch (e) {
+            console.log('[Llama] API error:', e)
+          }
+        }
+        
+        if (!url) {
+          return { 
+            success: false, 
+            error: 'Could not find GGUF file. Please enter the full HuggingFace download URL.' 
+          }
+        }
+      }
+      
+      const modelFileName = filename || url.split('/').pop() || 'model.gguf'
+      const modelPath_ = path.join(modelsPath, modelFileName)
+      
+      // Get the HuggingFace token if available
+      const hfToken = llamaSettings.huggingFaceToken || ''
+      
+      console.log('[Llama] Downloading from:', url)
+      console.log('[Llama] Saving to:', modelPath_)
+      if (hfToken) {
+        console.log('[Llama] Using HuggingFace token')
+      }
+      
+      return new Promise((resolve) => {
+        const { spawn } = require('child_process')
+        
+        // Check if curl is available
+        const curlTest = spawn('curl', ['--version'], { shell: true })
+        curlTest.on('error', () => {
+          console.log('[Llama] curl not found, trying with PowerShell Invoke-WebRequest')
+          
+          // Build PowerShell headers
+          let psHeaders = "-UserAgent 'Mozilla/5.0'"
+          if (hfToken) {
+            psHeaders += ` -Headers @{'Authorization'='Bearer ${hfToken}'}`
+          }
+          
+          const ps = spawn('powershell', [
+            '-Command',
+            `Invoke-WebRequest -Uri '${url}' -OutFile '${modelPath_}' ${psHeaders}`
+          ], { shell: true })
+          
+          let stderrOutput = ''
+          ps.stderr.on('data', (data: Buffer) => {
+            stderrOutput += data.toString()
+          })
+          
+          ps.on('close', (code: number) => {
+            const fileStats = fs.existsSync(modelPath_) ? fs.statSync(modelPath_) : null
+            if (code === 0 && fileStats && fileStats.size > 1024 * 1024) {
+              console.log('[Llama] Model downloaded via PowerShell:', modelPath_, `(${fileStats.size} bytes)`)
+              llamaSettings.modelPath = modelPath_
+              saveLlamaSettings({ modelPath: modelPath_ })
+              resolve({ success: true, path: modelPath_ })
+            } else {
+              console.log('[Llama] PowerShell download failed:', stderrOutput)
+              resolve({ success: false, error: 'Download failed. Please check the URL and try again.' })
+            }
+          })
+          return
+        })
+        
+        // Build curl command string with proper quoting for Windows
+        let curlCmd = `curl -L -f -o "${modelPath_}" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"`
+        if (hfToken) {
+          curlCmd += ` -H "Authorization: Bearer ${hfToken}"`
+        }
+        curlCmd += ` "${url}"`
+        
+        console.log('[Llama] Running curl command')
+        
+        const curl = spawn(curlCmd, [], { shell: true })
+        
+        let stderrOutput = ''
+        
+        curl.stderr.on('data', (data: Buffer) => {
+          stderrOutput += data.toString()
+        })
+        
+        curl.on('close', (code: number) => {
+          const MIN_SIZE = 1024 * 1024 // 1MB minimum
+          const fileStats = fs.existsSync(modelPath_) ? fs.statSync(modelPath_) : null
+          
+          if (code === 0 && fileStats && fileStats.size > MIN_SIZE) {
+            console.log('[Llama] Custom model downloaded:', modelPath_, `(${fileStats.size} bytes)`)
+            
+            // Auto-select the downloaded model
+            llamaSettings.modelPath = modelPath_
+            saveLlamaSettings({ modelPath: modelPath_ })
+            
+            resolve({ success: true, path: modelPath_ })
+          } else {
+            if (fileStats && fileStats.size > 0 && fileStats.size < MIN_SIZE) {
+              try { fs.unlinkSync(modelPath_) } catch {}
+            }
+            console.log('[Llama] Custom download failed:', stderrOutput)
+            resolve({ success: false, error: 'Download failed. Please check the URL and try again.' })
+          }
+        })
+        
+        curl.on('error', (err: any) => {
+          console.log('[Llama] Curl error:', err.message)
+          resolve({ success: false, error: err.message })
+        })
+      })
+    } catch (error: any) {
+      console.error('[Llama] Custom download error:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // Get download progress (for future use)
+  ipcMain.handle('llama:get-models-path', () => {
+    return getLlamaModelsPath()
+  })
+
+  // Open URL in default browser
+  ipcMain.handle('open-external', (_, url: string) => {
+    shell.openExternal(url)
   })
 
   console.log('[Whisper] IPC handlers registered')

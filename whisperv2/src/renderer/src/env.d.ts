@@ -64,11 +64,45 @@ interface WhisperApi {
   saveAudio: (audioData: ArrayBuffer) => Promise<SaveAudioResult>
 }
 
+interface LlamaSettings {
+  enabled: boolean
+  modelPath: string
+  modelId: string
+}
+
+interface LlamaProcessResult {
+  success: boolean
+  formattedText?: string
+  error?: string
+}
+
+interface LlamaModel {
+  id: string
+  name: string
+  size: string
+  memory: string
+  description: string
+  url: string
+}
+
+interface LlamaApi {
+  getSettings: () => Promise<LlamaSettings>
+  saveSettings: (settings: Partial<LlamaSettings>) => Promise<LlamaSettings>
+  checkBinary: () => Promise<boolean>
+  selectModel: () => Promise<SelectModelResult>
+  processText: (text: string) => Promise<LlamaProcessResult>
+  getModels: () => Promise<LlamaModel[]>
+  downloadModel: (modelId: string) => Promise<{ success: boolean; path?: string; error?: string }>
+  downloadCustomModel: (modelPath: string) => Promise<{ success: boolean; path?: string; error?: string }>
+  getModelsPath: () => Promise<string>
+}
+
 interface Api {
   registerHotkey: (hotkey: string) => Promise<boolean>
   unregisterHotkey: () => Promise<boolean>
   getHotkey: () => Promise<string>
   openSettingsWindow: () => Promise<void>
+  openExternal: (url: string) => Promise<void>
   onHotkeyTriggered: (callback: () => void) => () => void
   onHotkeyDown: (callback: () => void) => () => void
   onHotkeyUp: (callback: () => void) => () => void
@@ -76,6 +110,7 @@ interface Api {
   onOpenSettings: (callback: () => void) => () => void
   copyToClipboard: (text: string) => Promise<boolean>
   whisper: WhisperApi
+  llama: LlamaApi
 }
 
 declare global {
