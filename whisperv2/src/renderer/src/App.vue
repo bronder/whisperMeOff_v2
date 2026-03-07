@@ -4,61 +4,95 @@
     <template v-if="isSettingsWindow">
       <!-- Settings Panel -->
       <div class="card">
-        
-        <div class="setting-group">
-          <label>Hotkey</label>
-          <div class="hotkey-row">
-            <input 
-              type="text" 
-              v-model="hotkeyInput" 
-              @keydown="captureHotkey"
-              placeholder="Click and press keys..."
-              class="hotkey-input"
-              readonly
-              ref="hotkeyInputRef"
-            />
-            <button 
-              class="btn btn-record" 
-              :class="{ recording: isRecordingHotkey }"
-              @click="toggleHotkeyRecording"
-            >
-              {{ isRecordingHotkey ? '⏹ Stop' : '🎤 Record' }}
-            </button>
+         
+        <!-- Tabs -->
+        <div class="tabs">
+          <button 
+            class="tab-button" 
+            :class="{ active: activeTab === 'audio' }"
+            @click="activeTab = 'audio'"
+          >
+            🎤 Audio
+          </button>
+          <button 
+            class="tab-button" 
+            :class="{ active: activeTab === 'transcription' }"
+            @click="activeTab = 'transcription'"
+          >
+            📝 whisper.cpp
+          </button>
+          <button 
+            class="tab-button" 
+            :class="{ active: activeTab === 'general' }"
+            @click="activeTab = 'general'"
+          >
+            ⚙️ General
+          </button>
+        </div>
+
+        <!-- Audio Tab -->
+        <div v-if="activeTab === 'audio'" class="tab-content">
+          <div class="setting-group">
+            <label>Microphone</label>
+            <select v-model="selectedMic" class="select-input" @change="onMicChange">
+              <option value="">Default Microphone</option>
+              <option v-for="device in audioDevices" :key="device.deviceId" :value="device.deviceId">
+                {{ device.label || `Microphone ${device.deviceId}` }}
+              </option>
+            </select>
           </div>
-          <p class="hint" v-if="isRecordingHotkey">Press a key combination (e.g., Ctrl+R, Ctrl+Alt+T)...</p>
         </div>
 
-        <div class="setting-group">
-          <label>Microphone</label>
-          <select v-model="selectedMic" class="select-input" @change="onMicChange">
-            <option value="">Default Microphone</option>
-            <option v-for="device in audioDevices" :key="device.deviceId" :value="device.deviceId">
-              {{ device.label || `Microphone ${device.deviceId}` }}
-            </option>
-          </select>
+        <!-- Transcription Tab -->
+        <div v-if="activeTab === 'transcription'" class="tab-content">
+          <div class="setting-group">
+            <label>Language</label>
+            <select v-model="selectedLanguage" class="select-input">
+              <option value="auto">Auto Detect</option>
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="it">Italian</option>
+              <option value="pt">Portuguese</option>
+              <option value="ru">Russian</option>
+              <option value="zh">Chinese</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+            </select>
+          </div>
+
+          <div class="setting-group">
+            <label>Model Path</label>
+            <div class="path-display">{{ modelPath || 'Not selected' }}</div>
+            <button class="btn btn-primary" style="margin-top: 10px;" @click="selectModelFile">Select Model File</button>
+          </div>
         </div>
 
-        <div class="setting-group">
-          <label>Language</label>
-          <select v-model="selectedLanguage" class="select-input">
-            <option value="auto">Auto Detect</option>
-            <option value="en">English</option>
-            <option value="es">Spanish</option>
-            <option value="fr">French</option>
-            <option value="de">German</option>
-            <option value="it">Italian</option>
-            <option value="pt">Portuguese</option>
-            <option value="ru">Russian</option>
-            <option value="zh">Chinese</option>
-            <option value="ja">Japanese</option>
-            <option value="ko">Korean</option>
-          </select>
-        </div>
-
-        <div class="setting-group">
-          <label>Model Path</label>
-          <div class="path-display">{{ modelPath || 'Not selected' }}</div>
-          <button class="btn" @click="selectModelFile">Select Model File</button>
+        <!-- General Tab -->
+        <div v-if="activeTab === 'general'" class="tab-content">
+          <div class="setting-group">
+            <label>Hotkey</label>
+            <div class="hotkey-row">
+              <input 
+                type="text" 
+                v-model="hotkeyInput" 
+                @keydown="captureHotkey"
+                placeholder="Click and press keys..."
+                class="hotkey-input"
+                readonly
+                ref="hotkeyInputRef"
+              />
+              <button 
+                class="btn btn-record" 
+                :class="{ recording: isRecordingHotkey }"
+                @click="toggleHotkeyRecording"
+              >
+                {{ isRecordingHotkey ? '⏹ Stop' : '⌨️ Record' }}
+              </button>
+            </div>
+            <p class="hint" v-if="isRecordingHotkey">Press a key combination (e.g., Ctrl+R, Ctrl+Alt+T)...</p>
+          </div>
         </div>
 
         <div class="setting-actions">
@@ -105,88 +139,125 @@
 
       <!-- Settings Panel -->
       <div class="card" v-if="showSettings">
-      
-      <div class="setting-group">
-        <label>Hotkey</label>
-        <input 
-          type="text" 
-          v-model="hotkeyInput" 
-          @keydown="captureHotkey"
-          placeholder="Click and press keys..."
-          class="hotkey-input"
-        />
+       
+      <!-- Tabs -->
+      <div class="tabs">
+        <button 
+          class="tab-button" 
+          :class="{ active: activeTab === 'audio' }"
+          @click="activeTab = 'audio'"
+        >
+          🎤 Audio
+        </button>
+        <button 
+          class="tab-button" 
+          :class="{ active: activeTab === 'transcription' }"
+          @click="activeTab = 'transcription'"
+        >
+          📝 whisper.cpp
+        </button>
+        <button 
+          class="tab-button" 
+          :class="{ active: activeTab === 'general' }"
+          @click="activeTab = 'general'"
+        >
+          ⚙️ General
+        </button>
       </div>
 
-      <div class="setting-group">
-        <label>Microphone</label>
-        <select v-model="selectedMic" class="select-input" @change="onMicChange">
-          <option value="">Default Microphone</option>
-          <option v-for="device in audioDevices" :key="device.deviceId" :value="device.deviceId">
-            {{ device.label || `Microphone ${device.deviceId}` }}
-          </option>
-        </select>
-      </div>
-
-      <div class="setting-group">
-        <label>Whisper Binary</label>
-        <div class="model-status">
-          <span v-if="hasBinary">✅ Installed</span>
-          <span v-else class="no-model">Not installed</span>
+      <!-- Audio Settings Tab -->
+      <div v-if="activeTab === 'audio'" class="tab-content">
+        <div class="setting-group">
+          <label>Microphone</label>
+          <select v-model="selectedMic" class="select-input" @change="onMicChange">
+            <option value="">Default Microphone</option>
+            <option v-for="device in audioDevices" :key="device.deviceId" :value="device.deviceId">
+              {{ device.label || `Microphone ${device.deviceId}` }}
+            </option>
+          </select>
         </div>
       </div>
 
-      <div class="setting-group">
-        <button class="test-button" @click="downloadBinary" :disabled="isDownloadingBinary">
-          {{ isDownloadingBinary ? 'Downloading Binary...' : hasBinary ? '✅ Binary Ready' : '⬇️ Download Binary' }}
-        </button>
-      </div>
+      <!-- Transcription Settings Tab -->
+      <div v-if="activeTab === 'transcription'" class="tab-content">
+        <div class="setting-group">
+          <label>Language</label>
+          <select v-model="selectedLanguage" class="select-input">
+            <option value="auto">Auto-detect</option>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="it">Italian</option>
+            <option value="pt">Portuguese</option>
+            <option value="ru">Russian</option>
+            <option value="zh">Chinese</option>
+            <option value="ja">Japanese</option>
+            <option value="ko">Korean</option>
+          </select>
+        </div>
 
-      <div class="setting-group">
-        <label>Model Status</label>
-        <div class="model-status">
-          <span v-if="modelPath">{{ modelPath }}</span>
-          <span v-else class="no-model">No model selected</span>
+        <div class="setting-group">
+          <label>
+            <input type="checkbox" v-model="translateToEnglish" />
+            Translate to English
+          </label>
+        </div>
+
+        <div class="setting-group">
+          <label>
+            <input type="checkbox" v-model="pushToTalk" />
+            Push-to-talk (hold hotkey to record)
+          </label>
+        </div>
+
+        <div class="setting-group">
+          <label>Whisper Binary</label>
+          <div class="model-status">
+            <span v-if="hasBinary">✅ Installed</span>
+            <span v-else class="no-model">Not installed</span>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <button class="test-button" @click="downloadBinary" :disabled="isDownloadingBinary">
+            {{ isDownloadingBinary ? 'Downloading Binary...' : hasBinary ? '✅ Binary Ready' : '⬇️ Download Binary' }}
+          </button>
+        </div>
+
+        <div class="setting-group">
+          <label>Model Status</label>
+          <div class="model-status">
+            <span v-if="modelPath">{{ modelPath }}</span>
+            <span v-else class="no-model">No model selected</span>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <button class="test-button" @click="downloadModel" :disabled="isDownloading || !hasBinary">
+            {{ isDownloading ? 'Downloading...' : modelPath ? '✅ Model Ready' : '⬇️ Download Model' }}
+          </button>
+        </div>
+
+        <div class="setting-group">
+          <button class="test-button secondary" @click="selectModel">
+            📁 Select Existing Model
+          </button>
         </div>
       </div>
 
-      <div class="setting-group">
-        <button class="test-button" @click="downloadModel" :disabled="isDownloading || !hasBinary">
-          {{ isDownloading ? 'Downloading...' : modelPath ? '✅ Model Ready' : '⬇️ Download Model' }}
-        </button>
-      </div>
-
-      <div class="setting-group">
-        <button class="test-button secondary" @click="selectModel">
-          📁 Select Existing Model
-        </button>
-      </div>
-
-      <div class="setting-group">
-        <label>
-          <input type="checkbox" v-model="translateToEnglish" />
-          Translate to English
-        </label>
-        <label>
-          <input type="checkbox" v-model="pushToTalk" />
-          Push-to-talk (hold hotkey to record)
-        </label>
-      </div>
-
-      <div class="setting-group">
-        <label>Language</label>
-        <select v-model="selectedLanguage" class="select-input">
-          <option value="auto">Auto-detect</option>
-          <option value="en">English</option>
-          <option value="es">Spanish</option>
-          <option value="fr">French</option>
-          <option value="de">German</option>
-          <option value="it">Italian</option>
-          <option value="pt">Portuguese</option>
-          <option value="ru">Russian</option>
-          <option value="zh">Chinese</option>
-          <option value="ja">Japanese</option>
-          <option value="ko">Korean</option>
-        </select>
+      <!-- General Settings Tab -->
+      <div v-if="activeTab === 'general'" class="tab-content">
+        <div class="setting-group">
+          <label>Hotkey</label>
+          <input 
+            type="text" 
+            v-model="hotkeyInput" 
+            @keydown="captureHotkey"
+            placeholder="Click and press keys..."
+            class="hotkey-input"
+          />
+        </div>
       </div>
 
       <button class="save-button" @click="saveSettings">Save Settings</button>
@@ -225,6 +296,7 @@ const audioDevices = ref<MediaDeviceInfo[]>([])
 const transcriptionResult = ref('')
 const transcriptionHistory = ref<string[]>([])
 const showSettings = ref(false)
+const activeTab = ref('audio')
 const audioLevel = ref(0)
 const analyserNode = ref<AnalyserNode | null>(null)
 const isSettingsWindow = ref(false)
@@ -783,7 +855,7 @@ h1 {
   font-weight: bold;
   border: none;
   border-radius: 50px;
-  background: linear-gradient(135deg, #00d4ff, #7c3aed);
+  background: #3b82f6;
   color: white;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
@@ -827,6 +899,50 @@ h1 {
 .select-input option {
   background: #1a1a2e;
   color: white;
+}
+
+/* Tab styles */
+.tabs {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 10px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #aaa;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.tab-button.active {
+  background: #3b82f6;
+  color: white;
+  border-color: transparent;
+}
+
+.tab-content {
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .save-button {

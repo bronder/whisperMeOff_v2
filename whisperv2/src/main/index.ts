@@ -195,7 +195,7 @@ function createSettingsWindow(): void {
   const icon = nativeImage.createFromPath(iconPath)
   
   settingsWindow = new BrowserWindow({
-    width: 500,
+    width: 600,
     height: 725,
     minWidth: 400,
     minHeight: 400,
