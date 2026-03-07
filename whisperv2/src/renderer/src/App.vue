@@ -324,13 +324,6 @@
         </div>
 
         <div class="setting-group">
-          <label>
-            <input type="checkbox" v-model="pushToTalk" />
-            Push-to-talk (hold hotkey to record)
-          </label>
-        </div>
-
-        <div class="setting-group">
           <label>Whisper Binary</label>
           <div class="model-status">
             <span v-if="hasBinary">✅ Installed</span>
@@ -438,13 +431,24 @@
       <div v-if="activeTab === 'general'" class="tab-content">
         <div class="setting-group">
           <label>Hotkey</label>
-          <input 
-            type="text" 
-            v-model="hotkeyInput" 
-            @keydown="captureHotkey"
-            placeholder="Click and press keys..."
-            class="hotkey-input"
-          />
+          <div class="hotkey-row">
+            <input 
+              type="text" 
+              v-model="hotkeyInput" 
+              @keydown="captureHotkey"
+              placeholder="Click and press keys..."
+              class="hotkey-input"
+              readonly
+            />
+            <button 
+              class="btn btn-record"
+              :class="{ recording: isRecordingHotkey }"
+              @click="toggleHotkeyRecording"
+            >
+              {{ isRecordingHotkey ? '⏹ Stop' : '⌨️ Record' }}
+            </button>
+          </div>
+          <p class="hint" v-if="isRecordingHotkey">Press a key combination (e.g., Ctrl+R, Ctrl+Alt+T)...</p>
         </div>
       </div>
 
@@ -511,7 +515,7 @@ const hotkeyInputRef = ref<HTMLInputElement | null>(null)
 let audioRecorder: AudioRecorder | null = null
 
 // Cleanup functions
-let cleanupHotkey: (() => void) | null = null
+let cleanupHotkeyDown: (() => void) | null = null
 let cleanupHotkeyUp: (() => void) | null = null
 let cleanupHotkeyChanged: (() => void) | null = null
 let cleanupSettings: (() => void) | null = null
@@ -992,13 +996,23 @@ onMounted(async () => {
   // Get current hotkey
   const hotkey = await window.api.getHotkey()
   currentHotkey.value = hotkey.replace('CommandOrControl', 'Ctrl')
-  
-  // Listen for hotkey triggers (toggle mode)
-  cleanupHotkey = window.api.onHotkeyTriggered(() => {
-    console.log('[Renderer] Hotkey triggered - toggling recording!')
-    toggleRecording()
+   
+  // Listen for hotkey down (push-to-talk mode)
+  cleanupHotkeyDown = window.api.onHotkeyDown(() => {
+    console.log('[Renderer] Hotkey down - starting recording for push-to-talk!')
+    if (!isRecording.value) {
+      startRecording()
+    }
   })
-  
+    
+  // Listen for hotkey up (push-to-talk mode)
+  cleanupHotkeyUp = window.api.onHotkeyUp(() => {
+    console.log('[Renderer] Hotkey up - stopping recording for push-to-talk!')
+    if (isRecording.value) {
+      stopRecording()
+    }
+  })
+   
   // Listen for hotkey changes from settings
   cleanupHotkeyChanged = window.api.onHotkeyChanged((hotkey) => {
     console.log('[Renderer] Hotkey changed to:', hotkey)
@@ -1021,7 +1035,8 @@ onMounted(async () => {
 
 // Cleanup on unmount
 onUnmounted(() => {
-  cleanupHotkey?.()
+  cleanupHotkeyDown?.()
+  cleanupHotkeyUp?.()
   cleanupHotkeyChanged?.()
   cleanupSettings?.()
   if (audioRecorder) {

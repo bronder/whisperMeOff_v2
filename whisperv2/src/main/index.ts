@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, Tray, Menu, globalShortcut, nativeI
 import { join } from 'path'
 import { registerWhisperHandlers } from './whisperService'
 import * as fs from 'fs'
+import { uIOhook } from 'uiohook-napi'
 
 // Check if running in development mode
 const isDev = process.env.NODE_ENV !== 'production'
@@ -27,7 +28,7 @@ function loadHotkey(): string {
     if (fs.existsSync(path)) {
       const saved = fs.readFileSync(path, 'utf-8').trim()
       // Validate - don't load hotkeys with Meta (Windows key) as they're not supported
-      if (saved && saved !== defaultHotkey && !saved.includes('Meta')) {
+      if (saved && !saved.includes('Meta')) {
         // Try to verify it can be registered
         try {
           if (globalShortcut.register(saved, () => {})) {
@@ -433,24 +434,137 @@ function createTray(): void {
 function registerGlobalHotkey(): void {
   // Load saved hotkey or use default
   const hotkey = loadHotkey()
-   
-  const registered = globalShortcut.register(hotkey, () => {
-    console.log('[Hotkey] Triggered:', hotkey)
-    if (mainWindow) {
-      // Don't show window - let it stay hidden if user minimized to tray
-      mainWindow.webContents.send('hotkey-triggered')
-    }
-  })
   
-  if (registered) {
-    console.log('[Hotkey] Registered:', hotkey)
-  } else {
-    console.error('[Hotkey] Failed to register:', hotkey)
+  // Parse the hotkey to get the key name (e.g., "CommandOrControl+Shift+R" -> "R")
+  const hotkeyKey = hotkey.split('+').pop() || ''
+  
+  // Map key names to uiohook key codes
+  const keyMap: Record<string, number> = {
+    'a': 30, 'b': 48, 'c': 46, 'd': 32, 'e': 18, 'f': 33, 'g': 34, 'h': 35,
+    'i': 23, 'j': 36, 'k': 37, 'l': 38, 'm': 50, 'n': 49, 'o': 24, 'p': 25,
+    'q': 16, 'r': 19, 's': 31, 't': 20, 'u': 22, 'v': 47, 'w': 17, 'x': 45,
+    'y': 21, 'z': 44,
+    '0': 11, '1': 2, '2': 3, '3': 4, '4': 5, '5': 6, '6': 7, '7': 8, '8': 9, '9': 10,
+    'f1': 59, 'f2': 60, 'f3': 61, 'f4': 62, 'f5': 63, 'f6': 64, 'f7': 65, 'f8': 66,
+    'f9': 67, 'f10': 68, 'f11': 87, 'f12': 88,
+    'space': 57, 'enter': 28, 'tab': 15, 'backspace': 14, 'delete': 3667,
+    'escape': 1, 'esc': 1
   }
+  const keyCode = keyMap[hotkeyKey.toLowerCase()] || null
+  
+  // Set up uIOhook for push-to-talk (only if we have a valid keycode)
+  if (keyCode) {
+    try {
+      uIOhook.on('keydown', (e: any) => {
+        if (e.keycode === keyCode) {
+          console.log('[Uiohook] Key down:', e.keycode)
+          if (mainWindow) {
+            mainWindow.webContents.send('hotkey-down')
+          }
+        }
+      })
+      
+      uIOhook.on('keyup', (e: any) => {
+        if (e.keycode === keyCode) {
+          console.log('[Uiohook] Key up:', e.keycode)
+          if (mainWindow) {
+            mainWindow.webContents.send('hotkey-up')
+          }
+        }
+      })
+      
+      uIOhook.start()
+      console.log('[Uiohook] Started on app startup for push-to-talk')
+    } catch (error) {
+      console.error('[Uiohook] Failed to start on startup:', error)
+    }
+  }
+  
+  // Note: We don't use globalShortcut for push-to-talk - uIOhook handles it
+  console.log('[Hotkey] Using uIOhook for push-to-talk')
 }
 
 // Register IPC handlers for hotkey management
 function registerHotkeyHandlers(): void {
+  // Track if hotkey is currently pressed for hold-to-talk
+  let isHotkeyPressed = false
+  let currentHotkeyKeyCode: number | null = null
+  let previousKeyCode: number | null = null
+  let isUiohookSetup = false
+  
+  // Map key names to uiohook key codes using UiohookKey enum values
+  function getUiohookKeyCode(keyName: string): number | null {
+    const keyMap: Record<string, number> = {
+      // Letters (uIOhook key codes)
+      'a': 30, 'b': 48, 'c': 46, 'd': 32, 'e': 18, 'f': 33, 'g': 34, 'h': 35,
+      'i': 23, 'j': 36, 'k': 37, 'l': 38, 'm': 50, 'n': 49, 'o': 24, 'p': 25,
+      'q': 16, 'r': 19, 's': 31, 't': 20, 'u': 22, 'v': 47, 'w': 17, 'x': 45,
+      'y': 21, 'z': 44,
+      // Numbers
+      '0': 11, '1': 2, '2': 3, '3': 4, '4': 5, '5': 6, '6': 7, '7': 8, '8': 9, '9': 10,
+      // Function keys
+      'f1': 59, 'f2': 60, 'f3': 61, 'f4': 62, 'f5': 63, 'f6': 64, 'f7': 65, 'f8': 66,
+      'f9': 67, 'f10': 68, 'f11': 87, 'f12': 88,
+      // Special keys
+      'space': 57, 'enter': 28, 'tab': 15, 'backspace': 14, 'delete': 3667,
+      'escape': 1, 'esc': 1
+    }
+    return keyMap[keyName.toLowerCase()] || null
+  }
+   
+  // Set up uiohook for global key tracking
+  function setupUiohook() {
+    // Don't set up if no hotkey is configured yet
+    if (!currentHotkeyKeyCode) {
+      console.log('[Uiohook] No hotkey keycode configured yet')
+      return
+    }
+    
+    // If already set up with same keycode, skip
+    if (isUiohookSetup && previousKeyCode === currentHotkeyKeyCode) {
+      console.log('[Uiohook] Already set up with same keycode, skipping')
+      return
+    }
+    
+    // If keycode changed, need to re-setup
+    if (isUiohookSetup) {
+      console.log('[Uiohook] Keycode changed, re-setting up...')
+      try {
+        uIOhook.stop()
+      } catch (e) {
+        console.log('[Uiohook] Stop error (may not be running):', e)
+      }
+      isUiohookSetup = false
+    }
+    
+    try {
+      uIOhook.on('keydown', (e: any) => {
+        if (e.keycode === currentHotkeyKeyCode && !isHotkeyPressed) {
+          isHotkeyPressed = true
+          if (mainWindow) {
+            mainWindow.webContents.send('hotkey-down')
+          }
+        }
+      })
+      
+      uIOhook.on('keyup', (e: any) => {
+        if (e.keycode === currentHotkeyKeyCode && isHotkeyPressed) {
+          isHotkeyPressed = false
+          if (mainWindow) {
+            mainWindow.webContents.send('hotkey-up')
+          }
+        }
+      })
+      
+      uIOhook.start()
+      isUiohookSetup = true
+      previousKeyCode = currentHotkeyKeyCode
+      console.log('[Uiohook] Started global keyboard hook')
+    } catch (error) {
+      console.error('[Uiohook] Failed to start:', error)
+    }
+  }
+   
   // IPC handlers for hotkey management
   ipcMain.handle('register-hotkey', (_, hotkey: string) => {
     try {
@@ -465,13 +579,16 @@ function registerHotkeyHandlers(): void {
       // Update current hotkey
       currentHotkey = hotkey
       
-      // Register with globalShortcut for toggle mode
-      const result = globalShortcut.register(hotkey, () => {
-        if (mainWindow) {
-          // Don't show window - let it stay hidden if user minimized to tray
-          mainWindow.webContents.send('hotkey-triggered')
-        }
-      })
+      // Parse the hotkey to get the key name (e.g., "CommandOrControl+Shift+R" -> "R")
+      const hotkeyKey = hotkey.split('+').pop() || ''
+      currentHotkeyKeyCode = getUiohookKeyCode(hotkeyKey)
+      
+      // Start uiohook for push-to-talk (handles both keydown and keyup)
+      setupUiohook()
+      
+      // For push-to-talk, we rely solely on uIOhook for key events
+      // globalShortcut is not needed and can cause duplicate events
+      const result = true
       
       // Save the hotkey only if registration succeeded
       if (result) {
