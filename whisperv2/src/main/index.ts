@@ -101,11 +101,9 @@ function pasteToPreviousWindow(): void {
     mainWindow.hide()
   }
   
-  // 4. Delay slightly to let the OS transfer focus back
-  setTimeout(() => {
-    // 5. Simulate Ctrl+V using Windows API via PowerShell - more reliable than SendKeys
-    const tempDir = require('os').tmpdir()
-    const scriptPath = path.join(tempDir, 'paste_script.ps1')
+  // 4. Simulate Ctrl+V using Windows API via PowerShell - more reliable than SendKeys
+  const tempDir = require('os').tmpdir()
+  const scriptPath = path.join(tempDir, 'paste_script.ps1')
     
     // Using Windows API keybd_event which is more reliable
     const psScript = `
@@ -144,13 +142,10 @@ public class KeySim {
         console.log('[Paste] Sent Ctrl+V to previous window')
       }
       
-      // 6. Restore old clipboard after a short delay
-      setTimeout(() => {
-        clipboard.writeText(previousClipboard)
-        console.log('[Paste] Restored clipboard')
-      }, 50)
+      // 6. Restore old clipboard
+      clipboard.writeText(previousClipboard)
+      console.log('[Paste] Restored clipboard')
     })
-  }, 50)
 }
 
 function createWindow(): void {
