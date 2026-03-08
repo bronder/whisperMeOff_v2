@@ -531,6 +531,7 @@ function registerGlobalHotkey(): void {
           
           if (ctrlMatch && shiftMatch && altMatch) {
             isHotkeyPressed = true
+            // Note: e.preventDefault() can cause crashes with uIOhook, so we skip it
             if (mainWindow) {
               mainWindow.webContents.send('hotkey-down')
             }
@@ -549,6 +550,7 @@ function registerGlobalHotkey(): void {
         
         if (e.keycode === keyCode && isHotkeyPressed) {
           isHotkeyPressed = false
+          // Note: e.preventDefault() can cause crashes with uIOhook, so we skip it
           if (mainWindow) {
             mainWindow.webContents.send('hotkey-up')
           }
@@ -651,8 +653,7 @@ function registerHotkeyHandlers(): void {
           
           if (ctrlMatch && shiftMatch && altMatch) {
             isHotkeyPressed = true
-            // Prevent key from being sent to other apps
-            e.preventDefault()
+            // Note: e.preventDefault() can cause crashes with uIOhook
             if (mainWindow) {
               mainWindow.webContents.send('hotkey-down')
             }
@@ -671,8 +672,7 @@ function registerHotkeyHandlers(): void {
         
         if (e.keycode === currentHotkeyKeyCode && isHotkeyPressed) {
           isHotkeyPressed = false
-          // Prevent key from being sent to other apps
-          e.preventDefault()
+          // Note: e.preventDefault() can cause crashes with uIOhook
           if (mainWindow) {
             mainWindow.webContents.send('hotkey-up')
           }
