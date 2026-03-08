@@ -107,20 +107,31 @@ export class AudioRecorder {
         return
       }
       
-      this.mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' })
-        this.audioChunks = []
-        
-        // Stop all tracks
-        if (this.mediaStream) {
-          this.mediaStream.getTracks().forEach(track => track.stop())
-          this.mediaStream = null
-        }
-        
-        resolve(audioBlob)
+      // FIX: Request final data chunk before stopping to ensure EBML header is complete
+      // This fixes the issue with very short recordings (< 100ms) that result in malformed webm
+      try {
+        this.mediaRecorder.requestData()
+      } catch (e) {
+        // Ignore if requestData fails
       }
       
-      this.mediaRecorder.stop()
+      // Small delay to ensure final chunk is collected
+      setTimeout(() => {
+        this.mediaRecorder!.onstop = () => {
+          const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' })
+          this.audioChunks = []
+          
+          // Stop all tracks
+          if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach(track => track.stop())
+            this.mediaStream = null
+          }
+          
+          resolve(audioBlob)
+        }
+        
+        this.mediaRecorder!.stop()
+      }, 50)
     })
   }
 

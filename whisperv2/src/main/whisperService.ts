@@ -43,14 +43,9 @@ let llamaBinPath: string
 
 function getLlamaBinPath(): string {
   if (!llamaBinPath) {
-    // Check if user has their own llama.cpp build
-    const userLlamaPath = 'C:\\Utils\\llama.cpp\\build\\bin\\llama-cli.exe'
-    if (fs.existsSync(userLlamaPath)) {
-      llamaBinPath = userLlamaPath
-    } else {
-      const userDataPath = app.getPath('userData')
-      llamaBinPath = path.join(userDataPath, 'llama', 'llama-cli.exe')
-    }
+    // Use node-llama-cpp npm package (cross-platform)
+    const userDataPath = app.getPath('userData')
+    llamaBinPath = path.join(userDataPath, 'llama', 'llama-cli' + (process.platform === 'win32' ? '.exe' : ''))
   }
   return llamaBinPath
 }
@@ -216,24 +211,15 @@ function getSettingsPath(): string {
 
 function getWhisperBinPath(): string {
   if (!whisperBinPath) {
-    // First check if user has their own whisper.cpp build
-    const userWhisperPath = 'C:\\Utils\\whisper.cpp\\Release\\whisper-cli.exe'
-    if (fs.existsSync(userWhisperPath)) {
-      whisperBinPath = userWhisperPath
-    } else {
-      const userDataPath = app.getPath('userData')
-      whisperBinPath = path.join(userDataPath, 'whisper', 'whisper-cli.exe')
-    }
+    // Use app's userData path for whisper binary
+    const userDataPath = app.getPath('userData')
+    whisperBinPath = path.join(userDataPath, 'whisper', 'whisper-cli' + (process.platform === 'win32' ? '.exe' : ''))
   }
   return whisperBinPath
 }
 
 function getDefaultModelPath(): string {
-  // Use the model from whisper.cpp release folder if available
-  const releaseModelPath = 'C:\\Utils\\whisper.cpp\\Release\\models\\ggml-small.bin'
-  if (fs.existsSync(releaseModelPath)) {
-    return releaseModelPath
-  }
+  // Use app's userData path for models
   return ''
 }
 
@@ -314,7 +300,7 @@ async function processWithLlama(text: string): Promise<{ success: boolean; forma
     const llamaBinPath = getLlamaBinPath()
     
     if (!fs.existsSync(llamaBinPath)) {
-      return { success: false, error: 'llama-cli.exe not found. Please install llama.cpp to C:\\Utils\\llama.cpp\\build\\bin\\' }
+      return { success: false, error: 'llama-cli not found. Please configure Llama in Settings.' }
     }
     
     console.log('[Llama] Using binary:', llamaBinPath)
@@ -590,8 +576,36 @@ async function transcribeAudio(audioPath: string): Promise<string> {
       const wavPath = audioPath.replace('.webm', '.wav')
       console.log('[Whisper] Converting webm to wav...')
       
+      // DEBUG: Log file info before FFmpeg
+      const fileStats = fs.statSync(audioPath)
+      console.log('[Whisper] DEBUG: Source file size:', fileStats.size, 'bytes')
+      
+      // FIX: Wait for file to stop growing before FFmpeg processes it
+      // This fixes the EBML header issue with very short recordings
+      let lastSize = fileStats.size
+      let stableCount = 0
+      const maxWait = 3000 // Max 3 seconds
+      const checkInterval = 100 // Check every 100ms
+      const startWait = Date.now()
+      
+      console.log('[Whisper] Waiting for file to stabilize...')
+      while (stableCount < 3 && (Date.now() - startWait) < maxWait) {
+        await new Promise(resolve => setTimeout(resolve, checkInterval))
+        const currentStats = fs.statSync(audioPath)
+        if (currentStats.size === lastSize) {
+          stableCount++
+        } else {
+          stableCount = 0
+          lastSize = currentStats.size
+        }
+      }
+      console.log('[Whisper] File stabilized at:', lastSize, 'bytes after wait')
+      
       await new Promise<void>((resolve, reject) => {
+        const startTime = Date.now()
+        // Use -err_detect ignore_err to handle malformed short recordings
         const ffmpeg = spawn('ffmpeg', [
+          '-err_detect', 'ignore_err',
           '-i', audioPath,
           '-ar', '16000',
           '-ac', '1',
@@ -600,11 +614,30 @@ async function transcribeAudio(audioPath: string): Promise<string> {
           wavPath
         ], { shell: true })
         
-        ffmpeg.on('close', (code) => {
-          if (code === 0) resolve()
-          else reject(new Error('ffmpeg failed'))
+        let stderr = ''
+        ffmpeg.stderr.on('data', (data) => {
+          stderr += data.toString()
         })
-        ffmpeg.on('error', reject)
+        
+        ffmpeg.on('close', (code) => {
+          const elapsed = Date.now() - startTime
+          console.log('[Whisper] ffmpeg exit code:', code, '- elapsed:', elapsed + 'ms')
+          if (code === 0) {
+            // DEBUG: Log output file info
+            const wavStats = fs.statSync(wavPath)
+            console.log('[Whisper] DEBUG: Output wav size:', wavStats.size, 'bytes')
+            resolve()
+          } else {
+            // DEBUG: Log full stderr (not truncated)
+            console.error('[Whisper] ffmpeg FULL stderr:', stderr)
+            console.error('[Whisper] ffmpeg stderr length:', stderr.length)
+            reject(new Error('ffmpeg failed: ' + stderr.substring(0, 500)))
+          }
+        })
+        ffmpeg.on('error', (err) => {
+          console.error('[Whisper] ffmpeg error:', err.message)
+          reject(new Error('ffmpeg not found: ' + err.message))
+        })
       })
       
       inputPath = wavPath
@@ -708,13 +741,23 @@ export function registerWhisperHandlers(): void {
 
   // Check if binary and model are ready
   ipcMain.handle('whisper:check-model', () => {
-    const hasBinary = fs.existsSync(getWhisperBinPath())
+    // The app uses @kutalia/whisper-node-addon which is bundled with npm
+    // Check if whisper module can be loaded
+    let hasBinary = false
+    try {
+      // Try to require whisper - if it works, binary is available
+      require.resolve('@kutalia/whisper-node-addon')
+      hasBinary = true
+    } catch (e) {
+      hasBinary = false
+    }
+    
     const hasModel = whisperSettings.modelPath && fs.existsSync(whisperSettings.modelPath)
     return {
-      ready: hasBinary && hasModel,
+      ready: hasModel,  // Only need model for the npm package to work
       hasBinary,
       hasModel,
-      binaryPath: getWhisperBinPath(),
+      binaryPath: 'npm package: @kutalia/whisper-node-addon',
       modelPath: whisperSettings.modelPath
     }
   })

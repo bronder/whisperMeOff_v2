@@ -138,14 +138,8 @@
             </div>
           </div>
 
-          <div class="button-row">
-            <button class="test-button secondary" @click="browseHuggingFace">
-              🌐 Browse HuggingFace
-            </button>
-          </div>
-
           <div class="setting-group">
-            <label>Enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
+            <label>Enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0): <span title="Find models at huggingface.co/models - search for 'GGUF' quantized models" style="cursor: help; color: #60a5fa;">ⓘ</span></label>
             <div class="custom-model-row">
               <input 
                 type="text" 
@@ -166,7 +160,7 @@
           </div>
 
           <div class="setting-group">
-            <label>HuggingFace Token (optional, for private models or higher rate limits):</label>
+            <label>HuggingFace Token:</label>
             <input 
               type="password" 
               v-model="huggingFaceToken" 
@@ -209,27 +203,46 @@
 
         <!-- History Tab -->
         <div v-if="activeTab === 'history'" class="tab-content">
-          <div class="settings-section">
-            <div class="setting-group">
+          <div class="history-box">
+            <div class="history-header">
               <h3>Transcription History</h3>
-              <div class="history-list" v-if="dbTranscriptionHistory.length > 0">
-                <div 
-                  v-for="item in dbTranscriptionHistory" 
-                  :key="item.id" 
-                  class="history-item"
-                >
+              <input 
+                type="text" 
+                v-model="historyFilter" 
+                placeholder="Filter history..." 
+                class="history-filter-input"
+              />
+            </div>
+            <div class="history-list" v-if="filteredHistory.length > 0">
+              <div 
+                v-for="item in filteredHistory" 
+                :key="item.id" 
+                class="history-item"
+              >
+                <div class="history-item-header">
                   <div class="history-timestamp">{{ new Date(item.timestamp).toLocaleString() }}</div>
-                  <div class="history-text">{{ item.text }}</div>
+                  <div class="history-actions">
+                    <button class="history-btn" @click="copyHistoryItem(item.text)" title="Copy">📋</button>
+                    <button class="history-btn history-btn-delete" @click="deleteHistoryItem(item.id)" title="Delete">🗑️</button>
+                  </div>
                 </div>
+                <div class="history-text">{{ item.text }}</div>
               </div>
-              <div v-else class="no-history">
-                No transcriptions yet. Start recording to see history.
-              </div>
+            </div>
+            <div v-else-if="historyFilter && filteredHistory.length === 0" class="no-history">
+              No matching transcriptions found.
+            </div>
+            <div v-else class="no-history">
+              No transcriptions yet. Start recording to see history.
             </div>
           </div>
         </div>
 
-        <div class="setting-actions">
+        <div class="setting-actions" v-if="activeTab === 'history'">
+          <button class="btn" @click="goHome">🏠 Go Home</button>
+        </div>
+
+        <div class="setting-actions" v-if="activeTab !== 'history'">
           <button class="btn btn-primary" @click="saveSettingsAndClose">Save & Close</button>
         </div>
       </div>
@@ -424,7 +437,7 @@
         </div>
 
         <div class="setting-group">
-          <label>Enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0):</label>
+          <label>Enter HuggingFace model ID (e.g., ggml-org/tinygemma3-GGUF:Q8_0): <span title="Find models at huggingface.co/models - search for 'GGUF' quantized models" style="cursor: help; color: #60a5fa;">ⓘ</span></label>
           <div class="custom-model-row">
             <input 
               type="text" 
@@ -445,7 +458,7 @@
         </div>
 
         <div class="setting-group">
-          <label>HuggingFace Token (optional, for private models or higher rate limits):</label>
+          <label>HuggingFace Token:</label>
           <input 
             type="password" 
             v-model="huggingFaceToken" 
@@ -454,12 +467,6 @@
             @blur="saveLlamaSettings"
           />
           <p class="hint">Get your token from https://huggingface.co/settings/tokens</p>
-        </div>
-
-        <div class="setting-group">
-          <button class="test-button secondary" @click="browseHuggingFace">
-            🌐 Browse HuggingFace
-          </button>
         </div>
       </div>
 
@@ -490,17 +497,34 @@
 
       <!-- History Tab -->
       <div v-if="activeTab === 'history'" class="tab-content">
-        <div class="setting-group">
-          <h3>Transcription History</h3>
-          <div class="history-list" v-if="dbTranscriptionHistory.length > 0">
+        <div class="history-box">
+          <div class="history-header">
+            <h3>Transcription History</h3>
+            <input 
+              type="text" 
+              v-model="historyFilter" 
+              placeholder="Filter history..." 
+              class="history-filter-input"
+            />
+          </div>
+          <div class="history-list" v-if="filteredHistory.length > 0">
             <div 
-              v-for="item in dbTranscriptionHistory" 
+              v-for="item in filteredHistory" 
               :key="item.id" 
               class="history-item"
             >
-              <div class="history-timestamp">{{ new Date(item.timestamp).toLocaleString() }}</div>
+              <div class="history-item-header">
+                <div class="history-timestamp">{{ new Date(item.timestamp).toLocaleString() }}</div>
+                <div class="history-actions">
+                  <button class="history-btn" @click="copyHistoryItem(item.text)" title="Copy">📋</button>
+                  <button class="history-btn history-btn-delete" @click="deleteHistoryItem(item.id)" title="Delete">🗑️</button>
+                </div>
+              </div>
               <div class="history-text">{{ item.text }}</div>
             </div>
+          </div>
+          <div v-else-if="historyFilter && filteredHistory.length === 0" class="no-history">
+            No matching transcriptions found.
           </div>
           <div v-else class="no-history">
             No transcriptions yet. Start recording to see history.
@@ -508,9 +532,22 @@
         </div>
       </div>
 
-      <div class="button-row-right">
-        <button class="cancel-button" @click="cancelSettings">Cancel</button>
-        <button class="save-button" @click="saveSettings">Save Settings</button>
+      <div class="button-row" v-if="activeTab === 'history'" style="margin-top: -8px;">
+        <div></div>
+        <div class="button-row-right">
+          <button class="cancel-button" @click="goHome">🏠 Go Home</button>
+        </div>
+      </div>
+
+      <div class="button-row" v-if="activeTab !== 'history'">
+        <button class="browse-button" @click="browseHuggingFace" v-if="activeTab === 'llama'">
+          🌐 Browse HuggingFace
+        </button>
+        <div v-else></div>
+        <div class="button-row-right">
+          <button class="cancel-button" @click="cancelSettings">Cancel</button>
+          <button class="save-button" @click="saveSettings">Save Settings</button>
+        </div>
       </div>
     </div>
     </template>
@@ -528,7 +565,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import WaveformVisualizer from './components/WaveformVisualizer.vue'
 import { AudioRecorder, getAudioDevices } from './utils/audioRecorder'
 
@@ -559,7 +596,18 @@ const audioDevices = ref<MediaDeviceInfo[]>([])
 const transcriptionResult = ref('')
 const transcriptionHistory = ref<{ text: string; prompt?: string }[]>([])
 const dbTranscriptionHistory = ref<{ id: number; text: string; timestamp: string }[]>([])
+const historyFilter = ref('')
 const showSettings = ref(false)
+
+const filteredHistory = computed(() => {
+  if (!historyFilter.value.trim()) {
+    return dbTranscriptionHistory.value
+  }
+  const filter = historyFilter.value.toLowerCase()
+  return dbTranscriptionHistory.value.filter(item => 
+    item.text.toLowerCase().includes(filter)
+  )
+})
 
 // Load transcription history from database
 async function loadTranscriptionHistory() {
@@ -574,6 +622,27 @@ async function loadTranscriptionHistory() {
     console.error('[App] Failed to load transcription history:', err)
   }
 }
+
+// Copy history item text to clipboard
+async function copyHistoryItem(text: string) {
+  try {
+    await window.api.copyToClipboard(text)
+  } catch (err) {
+    console.error('[App] Failed to copy to clipboard:', err)
+  }
+}
+
+// Delete a history item
+async function deleteHistoryItem(id: number) {
+  try {
+    await window.api.transcription.delete(id)
+    // Remove from local list
+    dbTranscriptionHistory.value = dbTranscriptionHistory.value.filter(item => item.id !== id)
+  } catch (err) {
+    console.error('[App] Failed to delete history item:', err)
+  }
+}
+
 const menuOpen = ref(false)
 const activeTab = ref('audio')
 const audioLevel = ref(0)
@@ -820,6 +889,11 @@ const saveSettingsAndClose = async () => {
 const cancelSettings = async () => {
   // Close the settings window
   window.close()
+}
+
+// Go home from history tab
+const goHome = () => {
+  showSettings.value = false
 }
 
 // Select model file using native file dialog
@@ -1079,7 +1153,8 @@ onMounted(async () => {
   // Listen for hotkey down (push-to-talk mode)
   cleanupHotkeyDown = window.api.onHotkeyDown(() => {
     console.log('[Renderer] Hotkey down - starting recording for push-to-talk!')
-    if (!isRecording.value) {
+    // Don't trigger recording while in settings, recording hotkey, or menu open
+    if (!isRecording.value && !showSettings.value && !menuOpen.value && !isRecordingHotkey.value) {
       startRecording()
     }
   })
@@ -1135,6 +1210,8 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   min-height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   color: #fff;
 }
 
@@ -1489,12 +1566,14 @@ h1 {
 
 .tab-content {
   animation: fadeIn 0.2s ease;
+  overflow-y: auto;
+  max-height: calc(100vh - 150px);
 }
 
 .settings-section {
   border: 2px solid rgba(0, 212, 255, 0.3);
   border-radius: 8px;
-  padding: 15px;
+  padding: 8px;
   background: rgba(0, 0, 0, 0.2);
 }
 
@@ -1526,6 +1605,27 @@ h1 {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 15px;
+}
+
+.button-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 15px;
+}
+
+.browse-button {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.browse-button:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .cancel-button {
@@ -1670,32 +1770,108 @@ h1 {
 
 /* History tab styles */
 .history-list {
-  max-height: 400px;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .history-item {
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 8px;
-}
-
-.history-timestamp {
-  font-size: 0.75rem;
-  color: #888;
+  border-radius: 4px;
+  padding: 6px;
   margin-bottom: 4px;
 }
 
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.history-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.history-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: background 0.2s;
+}
+
+.history-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.history-btn-delete:hover {
+  background: rgba(255, 100, 100, 0.3);
+}
+
+.history-timestamp {
+  font-size: 0.65rem;
+  color: #888;
+  margin-bottom: 2px;
+}
+
 .history-text {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   color: #ddd;
 }
 
 .no-history {
   text-align: center;
   color: #888;
-  padding: 20px;
+  padding: 10px;
+}
+
+/* History tab heading */
+.setting-group h3 {
+  font-size: 1rem;
+  margin: 0 0 8px 0;
+}
+
+.history-filter-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.history-filter-input::placeholder {
+  color: #888;
+}
+
+.history-filter-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.history-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
+}
+
+.history-header {
+  margin-bottom: 8px;
+}
+
+.history-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 1rem;
 }
 
 .transcription-list {
