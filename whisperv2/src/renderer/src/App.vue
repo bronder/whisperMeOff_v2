@@ -177,26 +177,20 @@
         <div v-if="activeTab === 'general'" class="tab-content">
           <div class="settings-section">
             <div class="setting-group">
-              <label>Hotkey</label>
+              <label>Hotkey <span class="hotkey-fixed">(Ctrl+Shift)</span></label>
               <div class="hotkey-row">
                 <input 
                   type="text" 
                   v-model="hotkeyInput" 
-                  @keydown="captureHotkey"
-                  placeholder="Click and press keys..."
+                  @input="onHotkeyInput"
+                  @keydown="onHotkeyKeydown"
+                  maxlength="1"
+                  placeholder="Enter key..."
                   class="hotkey-input"
-                  readonly
                   ref="hotkeyInputRef"
                 />
-                <button 
-                  class="btn btn-record" 
-                  :class="{ recording: isRecordingHotkey }"
-                  @click="toggleHotkeyRecording"
-                >
-                  {{ isRecordingHotkey ? '⏹ Stop' : '⌨️ Record' }}
-                </button>
               </div>
-              <p class="hint" v-if="isRecordingHotkey">Press a key combination (e.g., Ctrl+R, Ctrl+Alt+T)...</p>
+              <p class="hint">Type a single letter or number to set the hotkey. The Ctrl+Shift modifiers are applied automatically.</p>
             </div>
           </div>
         </div>
@@ -473,25 +467,19 @@
       <!-- General Settings Tab -->
       <div v-if="activeTab === 'general'" class="tab-content">
         <div class="setting-group">
-          <label>Hotkey</label>
+          <label>Hotkey <span class="hotkey-fixed">(Ctrl+Shift)</span></label>
           <div class="hotkey-row">
             <input 
               type="text" 
               v-model="hotkeyInput" 
-              @keydown="captureHotkey"
-              placeholder="Click and press keys..."
+              @input="onHotkeyInput"
+              @keydown="onHotkeyKeydown"
+              maxlength="1"
+              placeholder="Enter key..."
               class="hotkey-input"
-              readonly
             />
-            <button 
-              class="btn btn-record"
-              :class="{ recording: isRecordingHotkey }"
-              @click="toggleHotkeyRecording"
-            >
-              {{ isRecordingHotkey ? '⏹ Stop' : '⌨️ Record' }}
-            </button>
           </div>
-          <p class="hint" v-if="isRecordingHotkey">Press a key combination (e.g., Ctrl+R, Ctrl+Alt+T)...</p>
+          <p class="hint">Type a single letter or number to set the hotkey. The Ctrl+Shift modifiers are applied automatically.</p>
         </div>
       </div>
 
@@ -812,52 +800,53 @@ const onMicChange = () => {
   }
 }
 
-// Capture hotkey combination
-const captureHotkey = async (event: KeyboardEvent) => {
-  if (!isRecordingHotkey.value) return
+// Handle hotkey input - single character with Ctrl+Shift fixed modifiers
+const onHotkeyInput = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  let value = input.value
   
-  event.preventDefault()
-  event.stopPropagation()
+  // Convert to uppercase
+  value = value.toUpperCase()
   
-  const modifiers: string[] = []
-  if (event.ctrlKey) modifiers.push('CommandOrControl')
-  if (event.shiftKey) modifiers.push('Shift')
-  if (event.altKey) modifiers.push('Alt')
-  // Note: Meta (Windows key) is not supported for global shortcuts in Electron
+  // Only allow valid characters (letters and numbers)
+  const validKey = /^[A-Z0-9]$/.test(value)
   
-  const key = event.key.toUpperCase()
-  const isModifierOnly = ['CONTROL', 'SHIFT', 'ALT', 'META'].includes(key)
-  
-  // Electron requires at least one non-modifier key (like R, A, etc.)
-  // Valid: Ctrl+R, Ctrl+Alt+A, Ctrl+Shift+T
-  // Invalid: Ctrl+Shift (no regular key), just a single modifier
-  if (!isModifierOnly && modifiers.length >= 1) {
-    // One modifier + regular key
-    hotkeyInput.value = [...modifiers, key].join('+')
-    isRecordingHotkey.value = false
-  } else if (isModifierOnly && modifiers.length >= 2) {
-    // Two modifiers pressed but no regular key - show hint
-    // This won't be accepted by Electron, so don't set it
+  if (validKey) {
+    // Auto-bind with Ctrl+Shift modifiers
+    hotkeyInput.value = value
+    // Automatically save the hotkey
+    const hotkeyString = `Control+Shift+${value}`
+    await window.api.registerHotkey(hotkeyString)
+    currentHotkey.value = `Ctrl+Shift+${value}`
+  } else {
+    // Invalid character - clear input
+    hotkeyInput.value = ''
+    input.value = ''
   }
 }
 
-// Toggle hotkey recording
-const toggleHotkeyRecording = () => {
-  isRecordingHotkey.value = !isRecordingHotkey.value
-  if (isRecordingHotkey.value) {
-    hotkeyInput.value = ''
-    // Focus the input so user can start typing immediately
-    nextTick(() => {
-      hotkeyInputRef.value?.focus()
-    })
+// Handle keydown for hotkey input
+const onHotkeyKeydown = (event: KeyboardEvent) => {
+  // Prevent non-printable keys except backspace
+  if (event.key === 'Backspace' || event.key === 'Delete') {
+    return // Allow backspace/delete
+  }
+  
+  // Only allow letters and numbers
+  const validKey = /^[A-Za-z0-9]$/.test(event.key)
+  
+  if (!validKey) {
+    event.preventDefault()
   }
 }
 
 // Save settings
 const saveSettings = async () => {
   if (hotkeyInput.value) {
-    await window.api.registerHotkey(hotkeyInput.value)
-    currentHotkey.value = hotkeyInput.value.replace('CommandOrControl', 'Ctrl')
+    // Build full hotkey string with Ctrl+Shift modifiers
+    const hotkeyString = `Control+Shift+${hotkeyInput.value.toUpperCase()}`
+    await window.api.registerHotkey(hotkeyString)
+    currentHotkey.value = `Ctrl+Shift+${hotkeyInput.value.toUpperCase()}`
   }
   
   // Save Whisper settings to main process
@@ -1114,7 +1103,9 @@ const loadSettings = async () => {
   try {
     const hotkey = await window.api.getHotkey()
     currentHotkey.value = hotkey.replace('CommandOrControl', 'Ctrl')
-    hotkeyInput.value = hotkey
+    // Extract just the key character (last part after the last +)
+    const keyPart = hotkey.split('+').pop() || ''
+    hotkeyInput.value = keyPart
   } catch (e) {
     console.error('[App] Error loading hotkey:', e)
   }
@@ -1145,11 +1136,14 @@ onMounted(async () => {
   
   // Load saved settings
   await loadSettings()
-   
+    
   // Get current hotkey
   const hotkey = await window.api.getHotkey()
   currentHotkey.value = hotkey.replace('CommandOrControl', 'Ctrl')
-   
+  // Extract just the key character for the input field
+  const keyPart = hotkey.split('+').pop() || ''
+  hotkeyInput.value = keyPart
+    
   // Listen for hotkey down (push-to-talk mode)
   cleanupHotkeyDown = window.api.onHotkeyDown(() => {
     console.log('[Renderer] Hotkey down - starting recording for push-to-talk!')
@@ -1171,6 +1165,9 @@ onMounted(async () => {
   cleanupHotkeyChanged = window.api.onHotkeyChanged((hotkey) => {
     console.log('[Renderer] Hotkey changed to:', hotkey)
     currentHotkey.value = hotkey.replace('CommandOrControl', 'Ctrl')
+    // Extract just the key character (last part after the last +)
+    const keyPart = hotkey.split('+').pop() || ''
+    hotkeyInput.value = keyPart
   })
   
   // Listen for settings open from tray - only for main window
@@ -1468,6 +1465,23 @@ h1 {
 
 .hotkey-row .hotkey-input {
   flex: 1;
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.hotkey-row .hotkey-input:focus {
+  outline: none;
+  box-shadow: none;
+  border-color: #3b82f6;
+}
+
+.hotkey-fixed {
+  font-size: 0.85rem;
+  font-weight: normal;
+  color: #6b7280;
+  margin-left: 8px;
 }
 
 .actions {

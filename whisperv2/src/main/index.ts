@@ -394,15 +394,50 @@ function createAppMenu(): void {
 }
 
 function createTray(): void {
-  // Use the flatrobot.ico file for tray icon - icon is in project root
-  const iconPath = join(__dirname, '../../../flatrobot.ico')
+  // Use the app icon for tray - works in both dev and production
+  let iconPath: string = ''
+  const fs = require('fs')
+  
+  if (app.isPackaged) {
+    // In production, the icon is in the app.asar
+    // Try multiple possible locations
+    const possiblePaths = [
+      join(process.resourcesPath, 'app.asar', 'flatrobot.ico'),
+      join(app.getAppPath(), 'flatrobot.ico'),
+      join(app.getPath('exe'), '..', 'resources', 'app.asar', 'flatrobot.ico')
+    ]
+    
+    for (const p of possiblePaths) {
+      console.log('[Tray] Checking path:', p)
+      if (fs.existsSync(p)) {
+        iconPath = p
+        break
+      }
+    }
+    
+    if (!iconPath) {
+      iconPath = possiblePaths[0]
+    }
+  } else {
+    // In development
+    iconPath = join(__dirname, '../../flatrobot.ico')
+  }
+  
   console.log('[Tray] Icon path:', iconPath)
   
-  const icon = nativeImage.createFromPath(iconPath)
+  let icon = nativeImage.createFromPath(iconPath)
+  
+  // If icon not found, create empty icon
+  if (icon.isEmpty()) {
+    console.log('[Tray] Icon not found, using default')
+    // Create a simple 16x16 icon
+    icon = nativeImage.createEmpty()
+  }
+  
   console.log('[Tray] Icon size:', icon.getSize())
   
   // Resize for tray (16x16 on Windows)
-  const trayIcon = icon.resize({ width: 16, height: 16 })
+  const trayIcon = icon.isEmpty() ? icon : icon.resize({ width: 16, height: 16 })
   
   tray = new Tray(trayIcon)
   
@@ -462,21 +497,58 @@ function registerGlobalHotkey(): void {
   }
   const keyCode = keyMap[hotkeyKey.toLowerCase()] || null
   
-  // Set up uIOhook for push-to-talk (only if we have a valid keycode)
+  // Parse hotkey to determine required modifiers
+  const hotkeyParts = hotkey.split('+')
+  const modifiers = hotkeyParts.slice(0, -1).map(m => m.toLowerCase())
+  const requiresCtrl = modifiers.includes('control') || modifiers.includes('ctrl')
+  const requiresShift = modifiers.includes('shift')
+  const requiresAlt = modifiers.includes('alt')
+  
+  // Track modifier key states
+  let ctrlPressed = false
+  let shiftPressed = false
+  let altPressed = false
+  let isHotkeyPressed = false
+  
   if (keyCode) {
     try {
       uIOhook.on('keydown', (e: any) => {
-        if (e.keycode === keyCode) {
-          console.log('[Uiohook] Key down:', e.keycode)
-          if (mainWindow) {
-            mainWindow.webContents.send('hotkey-down')
+        // Track modifier key states - CORRECT keycode mapping:
+        // Keycode 29 = Left Ctrl, Keycode 42 = Left Shift, Keycode 56 = Left Alt
+        if (e.keycode === 29) ctrlPressed = true      // Left Ctrl
+        if (e.keycode === 3617) ctrlPressed = true   // Right Ctrl
+        if (e.keycode === 42) shiftPressed = true    // Left Shift
+        if (e.keycode === 3640) shiftPressed = true  // Right Shift
+        if (e.keycode === 56) altPressed = true      // Left Alt
+        if (e.keycode === 3618) altPressed = true    // Right Alt
+        
+        // Check for hotkey with required modifiers
+        if (e.keycode === keyCode && !isHotkeyPressed) {
+          // Validate required modifiers
+          const ctrlMatch = !requiresCtrl || ctrlPressed
+          const shiftMatch = !requiresShift || shiftPressed
+          const altMatch = !requiresAlt || altPressed
+          
+          if (ctrlMatch && shiftMatch && altMatch) {
+            isHotkeyPressed = true
+            if (mainWindow) {
+              mainWindow.webContents.send('hotkey-down')
+            }
           }
         }
       })
       
       uIOhook.on('keyup', (e: any) => {
-        if (e.keycode === keyCode) {
-          console.log('[Uiohook] Key up:', e.keycode)
+        // Reset modifier key states - CORRECT keycode mapping
+        if (e.keycode === 29) ctrlPressed = false      // Left Ctrl
+        if (e.keycode === 3617) ctrlPressed = false   // Right Ctrl
+        if (e.keycode === 42) shiftPressed = false    // Left Shift
+        if (e.keycode === 3640) shiftPressed = false  // Right Shift
+        if (e.keycode === 56) altPressed = false      // Left Alt
+        if (e.keycode === 3618) altPressed = false    // Right Alt
+        
+        if (e.keycode === keyCode && isHotkeyPressed) {
+          isHotkeyPressed = false
           if (mainWindow) {
             mainWindow.webContents.send('hotkey-up')
           }
@@ -502,6 +574,16 @@ function registerHotkeyHandlers(): void {
   let previousKeyCode: number | null = null
   let isUiohookSetup = false
   
+  // Track modifier keys state
+  let ctrlPressed = false
+  let shiftPressed = false
+  let altPressed = false
+  
+  // Required modifiers for the hotkey
+  let requiresCtrl = false
+  let requiresShift = false
+  let requiresAlt = false
+  
   // Map key names to uiohook key codes using UiohookKey enum values
   function getUiohookKeyCode(keyName: string): number | null {
     const keyMap: Record<string, number> = {
@@ -517,7 +599,9 @@ function registerHotkeyHandlers(): void {
       'f9': 67, 'f10': 68, 'f11': 87, 'f12': 88,
       // Special keys
       'space': 57, 'enter': 28, 'tab': 15, 'backspace': 14, 'delete': 3667,
-      'escape': 1, 'esc': 1
+      'escape': 1, 'esc': 1,
+      // Modifiers
+      'control': 29, 'ctrl': 29, 'shift': 56, 'alt': 56
     }
     return keyMap[keyName.toLowerCase()] || null
   }
@@ -548,18 +632,47 @@ function registerHotkeyHandlers(): void {
     }
     
     try {
+      // Track modifier keys - CORRECT keycode mapping:
+      // Keycode 29 = Left Ctrl, Keycode 42 = Left Shift, Keycode 56 = Left Alt
       uIOhook.on('keydown', (e: any) => {
+        // Track modifier states
+        if (e.keycode === 29) ctrlPressed = true   // Left Ctrl
+        if (e.keycode === 3617) ctrlPressed = true  // Right Ctrl  
+        if (e.keycode === 42) shiftPressed = true   // Left Shift
+        if (e.keycode === 3640) shiftPressed = true // Right Shift
+        if (e.keycode === 56) altPressed = true     // Left Alt
+        if (e.keycode === 3618) altPressed = true   // Right Alt
+        
+        // Check for hotkey with modifiers
         if (e.keycode === currentHotkeyKeyCode && !isHotkeyPressed) {
-          isHotkeyPressed = true
-          if (mainWindow) {
-            mainWindow.webContents.send('hotkey-down')
+          const ctrlMatch = !requiresCtrl || ctrlPressed
+          const shiftMatch = !requiresShift || shiftPressed
+          const altMatch = !requiresAlt || altPressed
+          
+          if (ctrlMatch && shiftMatch && altMatch) {
+            isHotkeyPressed = true
+            // Prevent key from being sent to other apps
+            e.preventDefault()
+            if (mainWindow) {
+              mainWindow.webContents.send('hotkey-down')
+            }
           }
         }
       })
       
       uIOhook.on('keyup', (e: any) => {
+        // Reset modifier states - CORRECT keycode mapping
+        if (e.keycode === 29) ctrlPressed = false   // Left Ctrl
+        if (e.keycode === 3617) ctrlPressed = false // Right Ctrl
+        if (e.keycode === 42) shiftPressed = false  // Left Shift
+        if (e.keycode === 3640) shiftPressed = false
+        if (e.keycode === 56) altPressed = false    // Left Alt
+        if (e.keycode === 3618) altPressed = false
+        
         if (e.keycode === currentHotkeyKeyCode && isHotkeyPressed) {
           isHotkeyPressed = false
+          // Prevent key from being sent to other apps
+          e.preventDefault()
           if (mainWindow) {
             mainWindow.webContents.send('hotkey-up')
           }
@@ -589,9 +702,20 @@ function registerHotkeyHandlers(): void {
       // Update current hotkey
       currentHotkey = hotkey
       
-      // Parse the hotkey to get the key name (e.g., "CommandOrControl+Shift+R" -> "R")
-      const hotkeyKey = hotkey.split('+').pop() || ''
+      // Parse the hotkey to get modifiers and key name
+      const parts = hotkey.split('+')
+      const hotkeyKey = parts.pop() || ''
+      
+      // Check which modifiers are required
+      const modifiers = parts.map(m => m.toLowerCase())
+      requiresCtrl = modifiers.includes('control') || modifiers.includes('ctrl')
+      requiresShift = modifiers.includes('shift')
+      requiresAlt = modifiers.includes('alt')
+      
+      // Store required modifiers for validation
       currentHotkeyKeyCode = getUiohookKeyCode(hotkeyKey)
+      
+      console.log(`[Hotkey] Registered: ${hotkey}, requires: ctrl=${requiresCtrl}, shift=${requiresShift}, alt=${requiresAlt}`)
       
       // Start uiohook for push-to-talk (handles both keydown and keyup)
       setupUiohook()
@@ -603,7 +727,6 @@ function registerHotkeyHandlers(): void {
       // Save the hotkey only if registration succeeded
       if (result) {
         saveHotkey(hotkey)
-        console.log('[Hotkey] Registered:', hotkey)
         // Notify renderer to update hotkey display
         mainWindow?.webContents.send('hotkey-changed', hotkey)
       } else {
