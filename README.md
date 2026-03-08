@@ -69,6 +69,9 @@ npm run build:win
 ### History Tab
 - View all past transcriptions
 - Timestamps for each entry
+- Filter/search to find specific transcriptions
+- Copy button to copy transcription text to clipboard
+- Delete button to remove individual entries
 
 ## Push-to-Talk Mode
 

@@ -18,6 +18,11 @@
 - History tab to view past transcriptions
 - Record button for easier hotkey configuration
 - Download progress indicators
+- History tab now features:
+  - Compact design to show more log lines
+  - Filter/search input to find specific transcriptions
+  - Copy and delete buttons for each history entry
+  - Go Home button to return to main recording view
 
 ---
 
