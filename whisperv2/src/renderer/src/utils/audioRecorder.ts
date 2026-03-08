@@ -43,6 +43,11 @@ export class AudioRecorder {
       this.analyser.fftSize = 256
       this.analyser.smoothingTimeConstant = 0.8
       
+      // Resume audio context if suspended (browser autoplay policy)
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume()
+      }
+      
       // Connect microphone to analyser
       this.source = this.audioContext.createMediaStreamSource(this.mediaStream)
       this.source.connect(this.analyser)

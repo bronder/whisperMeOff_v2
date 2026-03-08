@@ -1,10 +1,18 @@
-import { ipcMain, app, dialog, shell } from 'electron'
+import { ipcMain, app, dialog, shell, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
 
 // Import kutalia whisper for GPU acceleration
 import whisper from '@kutalia/whisper-node-addon'
+
+// Helper to send download progress to renderer
+function sendLlamaDownloadProgress(status: string, progress: number, message: string): void {
+  const windows = BrowserWindow.getAllWindows()
+  for (const win of windows) {
+    win.webContents.send('llama:download-progress', { status, progress, message })
+  }
+}
 
 interface WhisperSettings {
   modelPath: string
@@ -37,8 +45,7 @@ let llamaSettings: LlamaSettings = {
   modelId: ''
 }
 
-// node-llama-cpp - will be loaded dynamically
-let nodeLlama: any = null
+// Note: node-llama-cpp integration removed - using llama-cli via spawn instead
 let llamaBinPath: string
 
 function getLlamaBinPath(): string {
@@ -110,7 +117,7 @@ async function downloadLlamaModel(modelId: string, progressCallback?: (progress:
       '-L', '-f', '-o', modelPath,
       '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       model.url
-    ], { shell: true })
+    ], { shell: false })
 
     let stderrOutput = ''
     
@@ -149,8 +156,10 @@ async function downloadLlamaModel(modelId: string, progressCallback?: (progress:
         console.log('[Llama] Trying PowerShell fallback...')
         const ps = spawn('powershell', [
           '-Command',
-          `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('${model.url}', '${modelPath}')`
-        ], { shell: true })
+          `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ` +
+          `$client = New-Object System.Net.WebClient; ` +
+          `$client.DownloadFile('${model.url}', '${modelPath}')`
+        ], { shell: false })
 
         ps.on('close', (psCode: number) => {
           const MIN_SIZE = 1024 * 1024 // 1MB minimum
@@ -179,8 +188,10 @@ async function downloadLlamaModel(modelId: string, progressCallback?: (progress:
       // Fallback to PowerShell
       const ps = spawn('powershell', [
         '-Command',
-        `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('${model.url}', '${modelPath}')`
-      ], { shell: true })
+        `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ` +
+        `$client = New-Object System.Net.WebClient; ` +
+        `$client.DownloadFile('${model.url}', '${modelPath}')`
+      ], { shell: false })
 
       ps.on('close', (psCode: number) => {
         const MIN_SIZE = 1024 * 1024 // 1MB minimum
@@ -326,7 +337,7 @@ Formatted:`
 
     
     return new Promise((resolve) => {
-      const llama = spawn(llamaBinPath, args, { shell: true })
+      const llama = spawn(llamaBinPath, args, { shell: false })
       
       let stdout = ''
       let stderr = ''
@@ -418,7 +429,7 @@ async function downloadWhisperBinary(): Promise<{ success: boolean; error?: stri
     // Use curl instead of PowerShell for more reliable downloads
     const curl = spawn('curl', [
       '-L', '-o', zipPath, url
-    ], { shell: true })
+    ], { shell: false })
     
     curl.on('close', (code: number) => {
       if (code !== 0 || !fs.existsSync(zipPath)) {
@@ -426,8 +437,9 @@ async function downloadWhisperBinary(): Promise<{ success: boolean; error?: stri
         // Fallback to PowerShell
         const ps = spawn('powershell', [
           '-Command',
-          `Invoke-WebRequest -Uri '${url}' -OutFile '${zipPath}'`
-        ], { shell: true })
+          `$url = '${url}'; $outFile = '${zipPath}'; ` +
+          `Invoke-WebRequest -Uri $url -OutFile $outFile`
+        ], { shell: false })
         
         ps.on('close', (psCode: number) => {
           if (psCode !== 0) {
@@ -447,8 +459,9 @@ async function downloadWhisperBinary(): Promise<{ success: boolean; error?: stri
       // Fallback to PowerShell
       const ps = spawn('powershell', [
         '-Command',
-        `Invoke-WebRequest -Uri '${url}' -OutFile '${zipPath}'`
-      ], { shell: true })
+        `$url = '${url}'; $outFile = '${zipPath}'; ` +
+        `Invoke-WebRequest -Uri $url -OutFile $outFile`
+      ], { shell: false })
       
       ps.on('close', (psCode: number) => {
         if (psCode !== 0) {
@@ -464,7 +477,7 @@ async function downloadWhisperBinary(): Promise<{ success: boolean; error?: stri
       const unzip = spawn('powershell', [
         '-Command',
         `Expand-Archive -Path '${zipPath}' -DestinationPath '${binDir}' -Force`
-      ], { shell: true })
+      ], { shell: false })
       
       unzip.on('close', (unzipCode: number) => {
         // Clean up zip
@@ -533,8 +546,9 @@ async function downloadModel(modelSize: string): Promise<{ success: boolean; pat
     
     const ps = spawn('powershell', [
       '-Command',
-      `Invoke-WebRequest -Uri '${url}' -OutFile '${modelPath}'`
-    ], { shell: true })
+      `$url = '${url}'; $outFile = '${modelPath}'; ` +
+      `Invoke-WebRequest -Uri $url -OutFile $outFile`
+    ], { shell: false })
     
     ps.stdout.on('data', (data: any) => {
       console.log('[Whisper] Download progress:', data.toString().substring(0, 100))
@@ -612,7 +626,7 @@ async function transcribeAudio(audioPath: string): Promise<string> {
           '-c:a', 'pcm_s16le',
           '-y',
           wavPath
-        ], { shell: true })
+        ], { shell: false })
         
         let stderr = ''
         ffmpeg.stderr.on('data', (data) => {
@@ -903,6 +917,9 @@ export function registerWhisperHandlers(): void {
       } else {
         // Just the HuggingFace path (e.g., "bartowski/Llama-3.2-3B-Instruct-GGUF")
         
+        // Send searching status
+        sendLlamaDownloadProgress('searching', 0, `Searching for model files on HuggingFace...`)
+        
         // First, try to find the GGUF file by common patterns
         const modelNameFromPath = modelId.split('/').pop() || modelId
         
@@ -935,6 +952,7 @@ export function registerWhisperHandlers(): void {
               url = tryUrl
               filename = tryFilename
               console.log('[Llama] Found GGUF file:', filename)
+              sendLlamaDownloadProgress('found', 0, `Found ${filename}, starting download...`)
               break
             }
           } catch (e) {
@@ -1001,15 +1019,18 @@ export function registerWhisperHandlers(): void {
         console.log('[Llama] Using HuggingFace token')
       }
       
+      // Send downloading status
+      sendLlamaDownloadProgress('downloading', 0, `Downloading ${filename}...`)
+      
       return new Promise((resolve) => {
         const { spawn } = require('child_process')
         
         // Check if curl is available
-        const curlTest = spawn('curl', ['--version'], { shell: true })
+        const curlTest = spawn('curl', ['--version'], { shell: false })
         curlTest.on('error', () => {
           console.log('[Llama] curl not found, trying with PowerShell Invoke-WebRequest')
           
-          // Build PowerShell headers
+          // Build PowerShell headers - embed token directly (safe with shell: false)
           let psHeaders = "-UserAgent 'Mozilla/5.0'"
           if (hfToken) {
             psHeaders += ` -Headers @{'Authorization'='Bearer ${hfToken}'}`
@@ -1017,52 +1038,92 @@ export function registerWhisperHandlers(): void {
           
           const ps = spawn('powershell', [
             '-Command',
-            `Invoke-WebRequest -Uri '${url}' -OutFile '${modelPath_}' ${psHeaders}`
-          ], { shell: true })
+            `$url = '${url}'; $outFile = '${modelPath_}'; ` +
+            `Invoke-WebRequest -Uri $url -OutFile $outFile ${psHeaders}`
+          ], { shell: false })
           
           let stderrOutput = ''
           ps.stderr.on('data', (data: Buffer) => {
             stderrOutput += data.toString()
           })
           
+          // Simulate progress updates for PowerShell (no native progress)
+          let progressInterval: NodeJS.Timeout | null = null
+          let simulatedProgress = 0
+          progressInterval = setInterval(() => {
+            if (simulatedProgress < 90) {
+              simulatedProgress += 5
+              sendLlamaDownloadProgress('downloading', simulatedProgress, `Downloading ${filename}...`)
+            }
+          }, 2000)
+          
           ps.on('close', (code: number) => {
+            if (progressInterval) clearInterval(progressInterval)
+            
             const fileStats = fs.existsSync(modelPath_) ? fs.statSync(modelPath_) : null
             if (code === 0 && fileStats && fileStats.size > 1024 * 1024) {
               console.log('[Llama] Model downloaded via PowerShell:', modelPath_, `(${fileStats.size} bytes)`)
+              sendLlamaDownloadProgress('complete', 100, `Downloaded ${filename} successfully!`)
               llamaSettings.modelPath = modelPath_
               saveLlamaSettings({ modelPath: modelPath_ })
               resolve({ success: true, path: modelPath_ })
             } else {
               console.log('[Llama] PowerShell download failed:', stderrOutput)
+              sendLlamaDownloadProgress('error', 0, 'Download failed')
               resolve({ success: false, error: 'Download failed. Please check the URL and try again.' })
             }
           })
           return
         })
         
-        // Build curl command string with proper quoting for Windows
-        let curlCmd = `curl -L -f -o "${modelPath_}" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"`
+        // Build curl arguments as array (not shell string) to prevent injection
+        const curlArgs = [
+          '-L', '-f', '-o', modelPath_,
+          '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        ]
+        
+        // Pre-expand token in Node.js to avoid shell expansion issues with shell: false
+        // Token still appears in args but this is more secure than shell string injection
         if (hfToken) {
-          curlCmd += ` -H "Authorization: Bearer ${hfToken}"`
+          curlArgs.push('-H', `Authorization: Bearer ${hfToken}`)
         }
-        curlCmd += ` "${url}"`
+        curlArgs.push(url)
         
         console.log('[Llama] Running curl command')
         
-        const curl = spawn(curlCmd, [], { shell: true })
+        const curl = spawn('curl', curlArgs, { shell: false })
         
         let stderrOutput = ''
+        let lastProgress = 0
+        
+        // Progress tracking for curl
+        let progressInterval: NodeJS.Timeout | null = null
+        progressInterval = setInterval(() => {
+          // Check file size to estimate progress
+          if (fs.existsSync(modelPath_)) {
+            const stats = fs.statSync(modelPath_)
+            // Estimate based on common model sizes (assume ~500MB max)
+            const estimatedProgress = Math.min(90, Math.round((stats.size / (500 * 1024 * 1024)) * 100))
+            if (estimatedProgress > lastProgress) {
+              lastProgress = estimatedProgress
+              sendLlamaDownloadProgress('downloading', estimatedProgress, `Downloading ${filename}...`)
+            }
+          }
+        }, 1000)
         
         curl.stderr.on('data', (data: Buffer) => {
           stderrOutput += data.toString()
         })
         
         curl.on('close', (code: number) => {
+          if (progressInterval) clearInterval(progressInterval)
+          
           const MIN_SIZE = 1024 * 1024 // 1MB minimum
           const fileStats = fs.existsSync(modelPath_) ? fs.statSync(modelPath_) : null
           
           if (code === 0 && fileStats && fileStats.size > MIN_SIZE) {
             console.log('[Llama] Custom model downloaded:', modelPath_, `(${fileStats.size} bytes)`)
+            sendLlamaDownloadProgress('complete', 100, `Downloaded ${filename} successfully!`)
             
             // Auto-select the downloaded model
             llamaSettings.modelPath = modelPath_
@@ -1074,12 +1135,15 @@ export function registerWhisperHandlers(): void {
               try { fs.unlinkSync(modelPath_) } catch {}
             }
             console.log('[Llama] Custom download failed:', stderrOutput)
+            sendLlamaDownloadProgress('error', 0, 'Download failed')
             resolve({ success: false, error: 'Download failed. Please check the URL and try again.' })
           }
         })
         
         curl.on('error', (err: any) => {
+          if (progressInterval) clearInterval(progressInterval)
           console.log('[Llama] Curl error:', err.message)
+          sendLlamaDownloadProgress('error', 0, 'Download failed: ' + err.message)
           resolve({ success: false, error: err.message })
         })
       })

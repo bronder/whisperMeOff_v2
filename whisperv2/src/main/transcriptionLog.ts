@@ -99,8 +99,8 @@ export function getTranscriptions(limit: number = 100): TranscriptionRecord[] {
     SELECT id, text, timestamp, duration, model, language
     FROM transcriptions
     ORDER BY timestamp DESC
-    LIMIT ${limit}
-  `)
+    LIMIT ?
+  `, [limit])
   
   if (!result[0]) {
     return []
@@ -126,8 +126,8 @@ export function getTranscription(id: number): TranscriptionRecord | null {
   const result = db.exec(`
     SELECT id, text, timestamp, duration, model, language
     FROM transcriptions
-    WHERE id = ${id}
-  `)
+    WHERE id = ?
+  `, [id])
   
   if (!result[0] || !result[0].values[0]) {
     return null

@@ -60,7 +60,11 @@ const api = {
     getModels: () => ipcRenderer.invoke('llama:get-models'),
     downloadModel: (modelId: string) => ipcRenderer.invoke('llama:download-model', modelId),
     downloadCustomModel: (modelPath: string) => ipcRenderer.invoke('llama:download-custom-model', modelPath),
-    getModelsPath: () => ipcRenderer.invoke('llama:get-models-path')
+    getModelsPath: () => ipcRenderer.invoke('llama:get-models-path'),
+    onDownloadProgress: (callback: (progress: { status: string; progress: number; message: string }) => void) => {
+      ipcRenderer.on('llama:download-progress', (_, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('llama:download-progress')
+    }
   },
 
   // Clipboard - works when window is not focused

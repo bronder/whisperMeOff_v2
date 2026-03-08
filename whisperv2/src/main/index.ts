@@ -22,7 +22,8 @@ let settingsWindow: BrowserWindow | null = null
 let recordingOverlay: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
-let currentHotkey = 'CommandOrControl+Shift+R'
+const DEFAULT_HOTKEY = 'CommandOrControl+Shift+R'
+let currentHotkey = DEFAULT_HOTKEY
 let previousWindowFocused: boolean = false
 
 // Path to store hotkey
@@ -32,7 +33,7 @@ function getHotkeyPath(): string {
 
 // Load saved hotkey
 function loadHotkey(): string {
-  const defaultHotkey = 'CommandOrControl+Shift+R'
+  const defaultHotkey = DEFAULT_HOTKEY
   try {
     const path = getHotkeyPath()
     if (fs.existsSync(path)) {
@@ -472,95 +473,9 @@ function createTray(): void {
 }
 
 function registerGlobalHotkey(): void {
-  // Load saved hotkey or use default
-  const hotkey = loadHotkey()
-  
-  // Parse the hotkey to get the key name (e.g., "CommandOrControl+Shift+R" -> "R")
-  const hotkeyKey = hotkey.split('+').pop() || ''
-  
-  // Map key names to uiohook key codes
-  const keyMap: Record<string, number> = {
-    'a': 30, 'b': 48, 'c': 46, 'd': 32, 'e': 18, 'f': 33, 'g': 34, 'h': 35,
-    'i': 23, 'j': 36, 'k': 37, 'l': 38, 'm': 50, 'n': 49, 'o': 24, 'p': 25,
-    'q': 16, 'r': 19, 's': 31, 't': 20, 'u': 22, 'v': 47, 'w': 17, 'x': 45,
-    'y': 21, 'z': 44,
-    '0': 11, '1': 2, '2': 3, '3': 4, '4': 5, '5': 6, '6': 7, '7': 8, '8': 9, '9': 10,
-    'f1': 59, 'f2': 60, 'f3': 61, 'f4': 62, 'f5': 63, 'f6': 64, 'f7': 65, 'f8': 66,
-    'f9': 67, 'f10': 68, 'f11': 87, 'f12': 88,
-    'space': 57, 'enter': 28, 'tab': 15, 'backspace': 14, 'delete': 3667,
-    'escape': 1, 'esc': 1
-  }
-  const keyCode = keyMap[hotkeyKey.toLowerCase()] || null
-  
-  // Parse hotkey to determine required modifiers
-  const hotkeyParts = hotkey.split('+')
-  const modifiers = hotkeyParts.slice(0, -1).map(m => m.toLowerCase())
-  const requiresCtrl = modifiers.includes('control') || modifiers.includes('ctrl')
-  const requiresShift = modifiers.includes('shift')
-  const requiresAlt = modifiers.includes('alt')
-  
-  // Track modifier key states
-  let ctrlPressed = false
-  let shiftPressed = false
-  let altPressed = false
-  let isHotkeyPressed = false
-  
-  if (keyCode) {
-    try {
-      uIOhook.on('keydown', (e: any) => {
-        // Track modifier key states - CORRECT keycode mapping:
-        // Keycode 29 = Left Ctrl, Keycode 42 = Left Shift, Keycode 56 = Left Alt
-        if (e.keycode === 29) ctrlPressed = true      // Left Ctrl
-        if (e.keycode === 3617) ctrlPressed = true   // Right Ctrl
-        if (e.keycode === 42) shiftPressed = true    // Left Shift
-        if (e.keycode === 3640) shiftPressed = true  // Right Shift
-        if (e.keycode === 56) altPressed = true      // Left Alt
-        if (e.keycode === 3618) altPressed = true    // Right Alt
-        
-        // Check for hotkey with required modifiers
-        if (e.keycode === keyCode && !isHotkeyPressed) {
-          // Validate required modifiers
-          const ctrlMatch = !requiresCtrl || ctrlPressed
-          const shiftMatch = !requiresShift || shiftPressed
-          const altMatch = !requiresAlt || altPressed
-          
-          if (ctrlMatch && shiftMatch && altMatch) {
-            isHotkeyPressed = true
-            // Note: e.preventDefault() can cause crashes with uIOhook, so we skip it
-            if (mainWindow) {
-              mainWindow.webContents.send('hotkey-down')
-            }
-          }
-        }
-      })
-      
-      uIOhook.on('keyup', (e: any) => {
-        // Reset modifier key states - CORRECT keycode mapping
-        if (e.keycode === 29) ctrlPressed = false      // Left Ctrl
-        if (e.keycode === 3617) ctrlPressed = false   // Right Ctrl
-        if (e.keycode === 42) shiftPressed = false    // Left Shift
-        if (e.keycode === 3640) shiftPressed = false  // Right Shift
-        if (e.keycode === 56) altPressed = false      // Left Alt
-        if (e.keycode === 3618) altPressed = false    // Right Alt
-        
-        if (e.keycode === keyCode && isHotkeyPressed) {
-          isHotkeyPressed = false
-          // Note: e.preventDefault() can cause crashes with uIOhook, so we skip it
-          if (mainWindow) {
-            mainWindow.webContents.send('hotkey-up')
-          }
-        }
-      })
-      
-      uIOhook.start()
-      console.log('[Uiohook] Started on app startup for push-to-talk')
-    } catch (error) {
-      console.error('[Uiohook] Failed to start on startup:', error)
-    }
-  }
-  
-  // Note: We don't use globalShortcut for push-to-talk - uIOhook handles it
-  console.log('[Hotkey] Using uIOhook for push-to-talk')
+  // This function is now deprecated - hotkey initialization is handled in registerHotkeyHandlers()
+  // Kept for backwards compatibility, but does nothing
+  console.log('[Hotkey] registerGlobalHotkey is deprecated, using registerHotkeyHandlers instead')
 }
 
 // Register IPC handlers for hotkey management
@@ -744,7 +659,25 @@ function registerHotkeyHandlers(): void {
   ipcMain.handle('get-hotkey', () => {
     return loadHotkey()
   })
-  
+
+  // Initialize hotkey on startup with saved hotkey (replaces registerGlobalHotkey)
+  function initializeHotkey(): void {
+    const hotkey = loadHotkey()
+    const hotkeyKey = hotkey.split('+').pop() || ''
+    const keyCode = getUiohookKeyCode(hotkeyKey)
+    const hotkeyParts = hotkey.split('+')
+    const modifiers = hotkeyParts.slice(0, -1).map(m => m.toLowerCase())
+    requiresCtrl = modifiers.includes('control') || modifiers.includes('ctrl')
+    requiresShift = modifiers.includes('shift')
+    requiresAlt = modifiers.includes('alt')
+    currentHotkeyKeyCode = keyCode
+
+    if (keyCode) {
+      setupUiohook()
+      console.log('[Hotkey] Initialized with saved hotkey:', hotkey)
+    }
+  }
+
   // Open settings in new window
   ipcMain.handle('open-settings-window', () => {
     createSettingsWindow()
@@ -764,6 +697,9 @@ function registerHotkeyHandlers(): void {
   ipcMain.on('audio-level', (_, level: number) => {
     sendAudioLevel(level)
   })
+
+  // Initialize hotkey on startup
+  initializeHotkey()
 }
 
 app.whenReady().then(async () => {
@@ -843,7 +779,6 @@ app.whenReady().then(async () => {
   createWindow()
   createTray()
   createAppMenu()
-  registerGlobalHotkey()
   registerWhisperHandlers()
   registerHotkeyHandlers()
 

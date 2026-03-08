@@ -159,6 +159,21 @@
             <p class="hint">Enter a HuggingFace model ID with optional quantization (e.g., :Q8_0, :Q4_K_M)</p>
           </div>
 
+          <!-- Download Progress -->
+          <div v-if="isDownloadingLlama || downloadStatus" class="setting-group">
+            <div class="download-progress">
+              <div class="download-status-message">{{ downloadStatusMessage || 'Preparing...' }}</div>
+              <div class="progress-bar-container">
+                <div 
+                  class="progress-bar" 
+                  :style="{ width: downloadProgress + '%' }"
+                  :class="{ 'progress-complete': downloadStatus === 'complete', 'progress-error': downloadStatus === 'error' }"
+                ></div>
+              </div>
+              <div class="download-percentage">{{ downloadProgress }}%</div>
+            </div>
+          </div>
+
           <div class="setting-group">
             <label>HuggingFace Token:</label>
             <input 
@@ -451,6 +466,21 @@
           <p class="hint">Enter a HuggingFace model ID with optional quantization (e.g., :Q8_0, :Q4_K_M)</p>
         </div>
 
+        <!-- Download Progress -->
+        <div v-if="isDownloadingLlama || downloadStatus" class="setting-group">
+          <div class="download-progress">
+            <div class="download-status-message">{{ downloadStatusMessage || 'Preparing...' }}</div>
+            <div class="progress-bar-container">
+              <div 
+                class="progress-bar" 
+                :style="{ width: downloadProgress + '%' }"
+                :class="{ 'progress-complete': downloadStatus === 'complete', 'progress-error': downloadStatus === 'error' }"
+              ></div>
+            </div>
+            <div class="download-percentage">{{ downloadProgress }}%</div>
+          </div>
+        </div>
+
         <div class="setting-group">
           <label>HuggingFace Token:</label>
           <input 
@@ -579,6 +609,8 @@ const isProcessingLlama = ref(false)
 const availableLlamaModels = ref<{ id: string; name: string; size: string; url: string }[]>([])
 const isDownloadingLlama = ref(false)
 const downloadProgress = ref(0)
+const downloadStatus = ref('')
+const downloadStatusMessage = ref('')
 const customModelPath = ref('')
 const audioDevices = ref<MediaDeviceInfo[]>([])
 const transcriptionResult = ref('')
@@ -647,6 +679,7 @@ let cleanupHotkeyDown: (() => void) | null = null
 let cleanupHotkeyUp: (() => void) | null = null
 let cleanupHotkeyChanged: (() => void) | null = null
 let cleanupSettings: (() => void) | null = null
+let cleanupDownloadProgress: (() => void) | null = null
 
 // Toggle recording
 const toggleRecording = async () => {
@@ -1176,6 +1209,14 @@ onMounted(async () => {
     menuOpen.value = false
   })
   
+  // Listen for llama download progress
+  cleanupDownloadProgress = window.api.llama.onDownloadProgress((progress) => {
+    downloadStatus.value = progress.status
+    downloadStatusMessage.value = progress.message
+    downloadProgress.value = progress.progress
+    isDownloadingLlama.value = progress.status !== 'complete' && progress.status !== 'error'
+  })
+  
   // Get audio devices
   try {
     audioDevices.value = await getAudioDevices()
@@ -1190,6 +1231,7 @@ onUnmounted(() => {
   cleanupHotkeyUp?.()
   cleanupHotkeyChanged?.()
   cleanupSettings?.()
+  cleanupDownloadProgress?.()
   if (audioRecorder) {
     audioRecorder.dispose()
   }
@@ -1404,6 +1446,50 @@ h1 {
 .hint {
   color: #666;
   font-size: 0.9rem;
+}
+
+/* Download progress styles */
+.download-progress {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.download-status-message {
+  color: #ccc;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar.progress-complete {
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+}
+
+.progress-bar.progress-error {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+.download-percentage {
+  color: #60a5fa;
+  font-size: 0.85rem;
+  text-align: right;
 }
 
 /* Button styles */

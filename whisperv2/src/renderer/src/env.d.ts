@@ -85,6 +85,12 @@ interface LlamaModel {
   url: string
 }
 
+interface LlamaDownloadProgress {
+  status: 'searching' | 'found' | 'downloading' | 'complete' | 'error'
+  progress: number
+  message: string
+}
+
 interface LlamaApi {
   getSettings: () => Promise<LlamaSettings>
   saveSettings: (settings: Partial<LlamaSettings>) => Promise<LlamaSettings>
@@ -95,6 +101,7 @@ interface LlamaApi {
   downloadModel: (modelId: string) => Promise<{ success: boolean; path?: string; error?: string }>
   downloadCustomModel: (modelPath: string) => Promise<{ success: boolean; path?: string; error?: string }>
   getModelsPath: () => Promise<string>
+  onDownloadProgress: (callback: (progress: LlamaDownloadProgress) => void) => () => void
 }
 
 interface TranscriptionRecord {
