@@ -698,8 +698,8 @@ const startRecording = async () => {
     // Set up level callback
     audioRecorder.setLevelCallback((level) => {
       audioLevel.value = level
-      // Send audio level to overlay
-      window.api?.sendAudioLevel(level)
+      // Send audio level to overlay (disabled to prevent focus issues)
+      // window.api?.sendAudioLevel(level)
     })
     
     // Start recording with selected microphone
@@ -710,6 +710,9 @@ const startRecording = async () => {
     
     isRecording.value = true
     statusText.value = 'Recording...'
+    
+    // Show main window briefly to take focus from other apps (prevents cursor flashing)
+    window.api?.showMainWindowForRecording()
     
     // Show recording overlay
     window.api?.showRecordingOverlay()

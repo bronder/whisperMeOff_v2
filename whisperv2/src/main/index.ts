@@ -218,7 +218,6 @@ function createSettingsWindow(): void {
 
 function createRecordingOverlay(): void {
   if (recordingOverlay) {
-    recordingOverlay.focus()
     return
   }
   
@@ -316,7 +315,10 @@ function showRecordingOverlay(): void {
   if (!recordingOverlay) {
     createRecordingOverlay()
   }
-  recordingOverlay?.show()
+  // Only show if not already visible to prevent flicker
+  if (recordingOverlay && !recordingOverlay.isVisible()) {
+    recordingOverlay.show()
+  }
 }
 
 function hideRecordingOverlay(): void {
@@ -484,6 +486,7 @@ function registerHotkeyHandlers(): void {
   let isHotkeyPressed = false
   let currentHotkeyKeyCode: number | null = null
   let previousKeyCode: number | null = null
+  let lastHotkeyEventTime = 0  // Track last hotkey event time for debounce
   let isUiohookSetup = false
   
   // Track modifier keys state
@@ -562,6 +565,13 @@ function registerHotkeyHandlers(): void {
           const altMatch = !requiresAlt || altPressed
           
           if (ctrlMatch && shiftMatch && altMatch) {
+            // Debounce: prevent events within 100ms
+            const now = Date.now()
+            if (now - lastHotkeyEventTime < 100) {
+              return
+            }
+            lastHotkeyEventTime = now
+            
             isHotkeyPressed = true
             // Note: e.preventDefault() can cause crashes with uIOhook
             if (mainWindow) {
@@ -686,6 +696,21 @@ function registerHotkeyHandlers(): void {
   // Recording overlay controls
   ipcMain.handle('show-recording-overlay', () => {
     showRecordingOverlay()
+    return true
+  })
+
+  // Show main window briefly to take focus during recording
+  ipcMain.handle('show-main-window-for-recording', () => {
+    if (mainWindow) {
+      // Store that we're in recording mode
+      mainWindowWasVisible = mainWindow.isVisible()
+      // Show and focus the window
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore()
+      }
+      mainWindow.show()
+      mainWindow.focus()
+    }
     return true
   })
   

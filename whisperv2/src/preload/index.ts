@@ -73,6 +73,7 @@ const api = {
   // Recording overlay
   showRecordingOverlay: () => ipcRenderer.invoke('show-recording-overlay'),
   hideRecordingOverlay: () => ipcRenderer.invoke('hide-recording-overlay'),
+  showMainWindowForRecording: () => ipcRenderer.invoke('show-main-window-for-recording'),
   sendAudioLevel: (level: number) => ipcRenderer.send('audio-level', level),
   
   // Auto-paste functionality
